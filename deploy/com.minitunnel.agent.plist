@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template installed by deploy/install-agent.sh. The __PLACEHOLDERS__ are
+  substituted at install time. Runs as a LaunchDaemon (system context) so the
+  agent is up at boot, before and without any GUI login, and is restarted if it
+  ever exits.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.minitunnel.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__BIN__</string>
+        <string>-relay</string>
+        <string>__RELAY__</string>
+        <string>-id</string>
+        <string>__AGENT_ID__</string>
+        <string>-cert</string>
+        <string>__CERT__</string>
+        <string>-allow</string>
+        <string>__ALLOW__</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MINITUNNEL_PSK</key>
+        <string>__PSK__</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/minitunnel-agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/minitunnel-agent.log</string>
+</dict>
+</plist>

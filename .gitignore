@@ -1,0 +1,9 @@
+# Secrets and build artifacts — never commit these
+cert.pem
+key.pem
+*.psk
+/bin/
+relay
+agent
+client
+gencert
