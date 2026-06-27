@@ -1,0 +1,22 @@
+[Unit]
+# Installed by deploy/install-relay.sh. __ADDR__ is substituted at install time.
+Description=MiniTunnel relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=minitunnel
+Group=minitunnel
+EnvironmentFile=/etc/minitunnel/relay.env
+ExecStart=/usr/local/bin/minitunnel-relay -addr __ADDR__ -cert /etc/minitunnel/cert.pem -key /etc/minitunnel/key.pem
+Restart=always
+RestartSec=3
+# Hardening: the relay only needs to listen and pipe bytes.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

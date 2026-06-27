@@ -74,13 +74,38 @@ export MINITUNNEL_PSK="$(openssl rand -hex 24)"   # share this secret across all
 - `cert.pem` is copied to the agent and the client.
 - The same `MINITUNNEL_PSK` is set on all three.
 
-### 1. Relay (public VPS)
+### 1. Relay
 
-Open the chosen TCP port (default `7000`) in the firewall / security group, then:
+The relay can run anywhere that **both** the agent and you (the client) can
+reach it — it does not have to be public. Two common placements:
+
+- **Public VPS** — when home and office share no network.
+- **Internal company server (no VPS)** — when you reach the office over a VPN
+  but the VPN does *not* route to the mini's subnet. Put the relay on an
+  internal host that the VPN *can* reach and that the mini can also reach, give
+  it an internal DNS name, and point everything at that name. No traffic leaves
+  the corporate network. The pinned certificate is keyed to the fixed SAN
+  `minitunnel-relay`, so the relay's internal IP/hostname can be anything and
+  can change without breaking trust.
+
+Quick run (foreground):
 
 ```sh
 MINITUNNEL_PSK=... ./relay -addr :7000 -cert cert.pem -key key.pem
 ```
+
+As a managed service on a Linux host (VPS or internal server) — copy the
+`relay-linux-*` binary, `cert.pem`, `key.pem` and `deploy/` to the server, then:
+
+```sh
+# internal-only relay: bind to the server's internal IP so it never listens publicly
+sudo MINITUNNEL_PSK=... BIND=10.0.0.5 PORT=7000 BINARY=./relay-linux-amd64 \
+  ./deploy/install-relay.sh
+```
+
+Open the port to the agent (office mini) and to your VPN client range. Build the
+Linux relay binary with `GOOS=linux GOARCH=amd64 go build -o relay-linux-amd64 ./cmd/relay`
+(use `arm64` for ARM servers).
 
 ### 2. Agent (office Mac mini)
 
