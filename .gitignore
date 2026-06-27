@@ -1,9 +1,13 @@
-# Secrets and build artifacts — never commit these
+# Secrets — never commit these
 cert.pem
 key.pem
 *.psk
+
+# Build artifacts. Anchored with a leading slash so they only match binaries
+# at the repo root and do NOT match the cmd/relay, cmd/agent, ... SOURCE dirs.
 /bin/
-relay
-agent
-client
-gencert
+/relay
+/agent
+/client
+/gencert
+/relay-linux-*
