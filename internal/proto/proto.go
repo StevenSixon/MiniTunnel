@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 // ServerName is the SAN baked into the relay certificate. Clients pin to this
@@ -39,12 +40,34 @@ type Hello struct {
 	TargetPort int    `json:"target_port,omitempty"`
 }
 
-// Notify is pushed by the relay down an agent's control link to ask it to open
-// a data connection for a newly requested session.
-type Notify struct {
-	SessionID  string `json:"session_id"`
-	TargetPort int    `json:"target_port"`
+// Control message types carried on the long-lived agent control link.
+const (
+	MsgNotify = "notify" // relay -> agent: open a data connection for a session
+	MsgPing   = "ping"   // both directions: liveness heartbeat
+)
+
+// ControlMsg is exchanged on the agent control link. Notify carries the
+// session details; Ping is a bare keepalive. Both sides send Ping periodically
+// and treat silence past ControlReadTimeout as a dead link.
+type ControlMsg struct {
+	Type       string `json:"type"`
+	SessionID  string `json:"session_id,omitempty"`
+	TargetPort int    `json:"target_port,omitempty"`
 }
+
+// SessionAck is the relay's reply to a client_session Hello, sent before the
+// connection switches to raw piping. It lets the client report a clear reason
+// (e.g. agent offline) instead of hanging on a silently-closed socket.
+type SessionAck struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// Heartbeat timing for the control link.
+const (
+	PingInterval       = 30 * time.Second // how often each side sends a Ping
+	ControlReadTimeout = 90 * time.Second // drop the link if nothing arrives within this
+)
 
 const maxMsg = 1 << 16
 
@@ -134,6 +157,20 @@ func ServerTLS(certFile, keyFile string) (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 	}, nil
+}
+
+// SetKeepAlive enables TCP keepalive on a connection (reaching through a
+// *tls.Conn to its underlying socket), so the OS eventually tears down links
+// that died without a FIN — defense in depth beneath the application heartbeat.
+func SetKeepAlive(conn net.Conn) {
+	raw := conn
+	if nc, ok := conn.(interface{ NetConn() net.Conn }); ok {
+		raw = nc.NetConn()
+	}
+	if tcp, ok := raw.(*net.TCPConn); ok {
+		tcp.SetKeepAlive(true)
+		tcp.SetKeepAlivePeriod(PingInterval)
+	}
 }
 
 // closeWriter is satisfied by *net.TCPConn and *tls.Conn, allowing a one-way

@@ -45,6 +45,20 @@ get locked-screen login + adaptive image quality for free from macOS's own
 - The agent enforces a **port allowlist** (`-allow`, default `22,5900`), so a
   client can never ask it to reach arbitrary ports/hosts.
 
+## Reliability
+
+- **Heartbeat.** The agent's control link exchanges a Ping every 30s in both
+  directions and drops the link if nothing arrives within 90s, on top of TCP
+  keepalive. This detects connections silently severed by a NAT/firewall idle
+  timeout instead of waiting on a stuck socket.
+- **Auto-reconnect.** The agent re-dials the relay every 3s after any drop, so a
+  relay restart, Wi-Fi blip, or office IP change recovers on its own.
+- **Clear client errors.** The relay acknowledges each client request before
+  piping, so the client logs a specific reason — `agent "X" is not online`,
+  `relay unreachable`, or `no response (check PSK/certificate)` — instead of a
+  silent hang. The client also retries the relay dial briefly and probes the
+  relay once at startup.
+
 ## Build
 
 ```sh
