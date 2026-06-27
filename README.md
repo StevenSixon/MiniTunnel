@@ -12,7 +12,7 @@ get locked-screen login + adaptive image quality for free from macOS's own
 `sshd` and `screensharingd`.
 
 ```
-                 public VPS (you own it)
+        relay host — VPS or internal server (you run it)
                ┌────────────────────────┐
                │         relay          │
                └───────────┬────────────┘
@@ -30,7 +30,7 @@ get locked-screen login + adaptive image quality for free from macOS's own
 
 | Binary    | Runs on            | Role                                                        |
 |-----------|--------------------|-------------------------------------------------------------|
-| `relay`   | public VPS         | Rendezvous: matches client requests to a registered agent.  |
+| `relay`   | VPS *or* internal server | Rendezvous: matches client requests to a registered agent. |
 | `agent`   | office Mac mini    | Dials out, stays connected, bridges sessions to local ports.|
 | `client`  | home Mac Pro       | Opens local ports that forward through the relay.           |
 | `gencert` | once, anywhere     | Generates the relay's pinned TLS certificate.               |
@@ -131,19 +131,23 @@ Then keep the machine awake so the tunnel survives:
 sudo pmset -c sleep 0 disablesleep 1 displaysleep 0
 ```
 
-Run the agent (it reconnects forever on its own):
+Recommended — install as a LaunchDaemon so it runs at boot, even when logged
+out or the screen is locked (the script also applies the `pmset` settings above):
 
 ```sh
-MINITUNNEL_PSK=... ./agent -relay your.vps.ip:7000 -cert cert.pem -id office-mini
+RELAY=relay.host:7000 AGENT_ID=office-mini MINITUNNEL_PSK=... ./deploy/install-agent.sh
 ```
 
-To keep it running across reboots, install it as a LaunchAgent/Daemon (see
-`Auto-start` below).
+Or run it in the foreground for a quick test (it reconnects forever on its own):
+
+```sh
+MINITUNNEL_PSK=... ./agent -relay relay.host:7000 -cert cert.pem -id office-mini
+```
 
 ### 3. Client (home Mac Pro)
 
 ```sh
-MINITUNNEL_PSK=... ./client -relay your.vps.ip:7000 -cert cert.pem -agent office-mini
+MINITUNNEL_PSK=... ./client -relay relay.host:7000 -cert cert.pem -agent office-mini
 ```
 
 Defaults forward `2222 -> 22` and `5901 -> 5900`. Then:
@@ -156,19 +160,27 @@ open vnc://127.0.0.1:5901          # Screen Sharing (works at the lock screen)
 Add more forwards with repeated `-L localPort:remotePort` (each remote port must
 be in the agent's `-allow` list).
 
-## Auto-start on the Mac mini (recommended)
+## Managing the Mac mini agent
 
-Create `~/Library/LaunchAgents/com.minitunnel.agent.plist` pointing at the agent
-binary with its flags and `MINITUNNEL_PSK` in `EnvironmentVariables`, set
-`RunAtLoad` and `KeepAlive` to `true`, then `launchctl load` it. This survives
-reboots and restarts the agent if it ever exits.
+`deploy/install-agent.sh` (used above) installs the agent as a LaunchDaemon, so
+it starts at boot, runs even when logged out / locked, and is restarted if it
+exits. Manage it with:
+
+```sh
+sudo launchctl print system/com.minitunnel.agent | head   # status
+tail -f /var/log/minitunnel-agent.log                      # logs
+sudo launchctl bootout system/com.minitunnel.agent         # stop / uninstall
+```
 
 ## Caveats
 
-- You need a VPS with a public IP. That's networking reality for NAT + dynamic
-  IP, not an optional dependency — but it's a host you control, not a SaaS.
-- This MVP relays all traffic through the VPS. Latency and the VPS's bandwidth
-  set the ceiling; a region close to the office helps. Direct P2P via UDP hole
+- You need a **relay host reachable by both ends** — a public VPS when home and
+  office share no network, or an internal server when you reach the office over
+  a VPN that does not route to the mini's subnet. Either way it's a host you
+  control, not a SaaS. This is networking reality for NAT + a changing IP, not
+  an optional dependency.
+- All traffic currently flows through the relay, so its latency and bandwidth
+  set the ceiling; pick a host close to the office. Direct P2P via UDP hole
   punching is a planned optimization.
 - If FileVault is on and the mini reboots, it stops at the pre-boot unlock
   screen, which is below this tunnel — someone must unlock it physically.
