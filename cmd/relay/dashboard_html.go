@@ -72,6 +72,7 @@ const dashboardHTML = `<!doctype html>
 </main>
 
 <script>
+var BASE = "__PREFIX__";  // URL path prefix injected by the relay ("" or "/foo")
 function dur(s){ s=Math.max(0,s|0);
   var d=Math.floor(s/86400); s%=86400;
   var h=Math.floor(s/3600); s%=3600;
@@ -83,7 +84,7 @@ function setStatus(cls,txt){ document.getElementById("status").innerHTML='<span 
 
 async function load(){
   try{
-    var res = await fetch("/api/status",{credentials:"same-origin",cache:"no-store"});
+    var res = await fetch(BASE+"/api/status",{credentials:"same-origin",cache:"no-store"});
     if(res.status===401){ setStatus("bad","unauthorized — open this page with ?token=…"); return; }
     if(res.status===503){ setStatus("bad","dashboard disabled — set MINITUNNEL_ADMIN_TOKEN"); return; }
     if(!res.ok){ throw new Error("HTTP "+res.status); }

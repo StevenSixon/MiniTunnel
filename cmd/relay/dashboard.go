@@ -9,10 +9,24 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"minitunnel/internal/proto"
 )
+
+// normalizePrefix cleans a URL path prefix to "" (root) or "/foo" form — a
+// leading slash, no trailing slash — so it can be concatenated with route paths.
+func normalizePrefix(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || p == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimRight(p, "/")
+}
 
 // --- JSON shapes returned by /api/status ---
 
@@ -85,34 +99,40 @@ func (r *relay) snapshot() statusResp {
 	}
 }
 
-// serveHTTP runs the dashboard listener. Blocks; run in its own goroutine.
+// serveHTTP runs the dashboard listener. Blocks; run in its own goroutine. All
+// routes are mounted under r.httpPrefix so the service can sit behind a gateway
+// that routes by URL path (e.g. https://host/minitunnel/...).
 func (r *relay) serveHTTP(addr string) {
 	mux := http.NewServeMux()
+	prefix := r.httpPrefix // already normalized in main()
 
 	// Unauthenticated: cheap liveness for a TCP or HTTP probe.
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc(prefix+"/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("ok\n"))
 	})
 
-	mux.HandleFunc("/api/status", r.authed(func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc(prefix+"/api/status", r.authed(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(r.snapshot())
 	}))
 
-	mux.HandleFunc("/", r.authed(func(w http.ResponseWriter, req *http.Request) {
-		if req.URL.Path != "/" {
+	// The page knows its own prefix so its fetches and links resolve correctly.
+	page := strings.ReplaceAll(dashboardHTML, "__PREFIX__", prefix)
+	mux.HandleFunc(prefix+"/", r.authed(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != prefix+"/" {
 			http.NotFound(w, req)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(dashboardHTML))
+		w.Write([]byte(page))
 	}))
 
+	loc := addr + prefix + "/"
 	if r.adminToken == "" {
-		log.Printf("http dashboard on %s — WARNING: MINITUNNEL_ADMIN_TOKEN unset, dashboard/API disabled (only /healthz served)", addr)
+		log.Printf("http dashboard on %s — WARNING: MINITUNNEL_ADMIN_TOKEN unset, dashboard/API disabled (only %s/healthz served)", loc, prefix)
 	} else {
-		log.Printf("http dashboard on %s (/, /api/status protected; /healthz open)", addr)
+		log.Printf("http dashboard on %s (%s/ and %s/api/status protected; %s/healthz open)", loc, prefix, prefix, prefix)
 	}
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Printf("http dashboard stopped: %v", err)
@@ -136,10 +156,11 @@ func (r *relay) authed(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if fromQuery {
+			cookiePath := r.httpPrefix + "/"
 			http.SetCookie(w, &http.Cookie{
 				Name:     "mt_admin",
 				Value:    tok,
-				Path:     "/",
+				Path:     cookiePath,
 				HttpOnly: true,
 				SameSite: http.SameSiteStrictMode,
 			})

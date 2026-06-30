@@ -50,6 +50,7 @@ type relay struct {
 	psk        string
 	adminToken string
 	listenAddr string
+	httpPrefix string // URL path prefix for the dashboard, e.g. "/minitunnel" ("" = root)
 	startedAt  time.Time
 
 	mu       sync.Mutex
@@ -84,6 +85,7 @@ func main() {
 		psk:        psk,
 		adminToken: proto.EnvOr("MINITUNNEL_ADMIN_TOKEN", ""),
 		listenAddr: *addr,
+		httpPrefix: normalizePrefix(proto.EnvOr("MINITUNNEL_HTTP_PREFIX", "")),
 		startedAt:  time.Now(),
 		agents:     map[string]*agentConn{},
 		waiting:    map[string]*pending{},
