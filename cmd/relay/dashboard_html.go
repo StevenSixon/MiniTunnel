@@ -38,6 +38,13 @@ const dashboardHTML = `<!doctype html>
   button { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:6px 12px; cursor:pointer; }
   button:hover { background:#30363d; }
   #err { color:#f85149; padding:10px 24px; display:none; }
+  .connect-agent { background:#161b22; border:1px solid #21262d; border-radius:10px; padding:14px 18px; margin-bottom:14px; }
+  .connect-agent h3 { margin:0 0 6px; font-size:14px; }
+  .lbl { color:#8b949e; font-size:12px; margin:10px 0 4px; }
+  .cmd { display:flex; gap:8px; align-items:stretch; }
+  .cmd code { flex:1; background:#0d1117; border:1px solid #21262d; border-radius:6px;
+              padding:8px 10px; overflow-x:auto; white-space:pre; }
+  .cmd button { white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -64,6 +71,9 @@ const dashboardHTML = `<!doctype html>
     <tbody id="agents"></tbody>
   </table>
 
+  <h2>Connect</h2>
+  <div id="connect"></div>
+
   <h2>Live sessions</h2>
   <table>
     <thead><tr><th>Session</th><th>Agent</th><th>Target port</th><th>Client</th><th>Duration</th></tr></thead>
@@ -73,6 +83,10 @@ const dashboardHTML = `<!doctype html>
 
 <script>
 var BASE = "__PREFIX__";  // URL path prefix injected by the relay ("" or "/foo")
+// Relay endpoint as seen from this browser. If the page is reached through an L7
+// gateway (https), clients must tunnel over wss to <prefix>/tunnel; the commands
+// below are derived from the current address so they always point at the right host.
+var WSS = (location.protocol==="https:"?"wss://":"ws://")+location.host+BASE+"/tunnel";
 function dur(s){ s=Math.max(0,s|0);
   var d=Math.floor(s/86400); s%=86400;
   var h=Math.floor(s/3600); s%=3600;
@@ -81,6 +95,33 @@ function dur(s){ s=Math.max(0,s|0);
 }
 function esc(t){ var e=document.createElement("span"); e.textContent=t==null?"":String(t); return e.innerHTML; }
 function setStatus(cls,txt){ document.getElementById("status").innerHTML='<span class="dot '+cls+'"></span>'+esc(txt); }
+
+function cmdRow(label,text){
+  return '<div class="lbl">'+esc(label)+'</div>'+
+    '<div class="cmd"><code class="mono">'+esc(text)+'</code>'+
+    '<button onclick="copyCmd(this)">Copy</button></div>';
+}
+function connectBlock(id){
+  var c1='MINITUNNEL_PSK=<your-psk> ./client -relay '+WSS+' -agent '+id+
+         ' -cert cert.pem -L 2222:22 -L 5901:5900';
+  return '<div class="connect-agent"><h3 class="mono">'+esc(id)+'</h3>'+
+    cmdRow('1) Start client on your machine (keep it running; run from the MiniTunnel dir)', c1)+
+    cmdRow('2) SSH in (another terminal)', 'ssh -p 2222 <user>@127.0.0.1')+
+    cmdRow('3) Screen sharing', 'open vnc://127.0.0.1:5901')+
+    '</div>';
+}
+function copyCmd(b){
+  var t=b.parentNode.querySelector("code").textContent;
+  var done=function(){ b.textContent="Copied"; setTimeout(function(){ b.textContent="Copy"; },1200); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done, function(){ copyFallback(t,done); });
+  } else { copyFallback(t,done); }
+}
+function copyFallback(t,done){
+  var ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); }catch(e){}
+  document.body.removeChild(ta); done();
+}
 
 async function load(){
   try{
@@ -106,6 +147,10 @@ async function load(){
         "<td><span class='dot "+(stale?"bad":"ok")+"'></span>"+dur(a.last_seen_sec)+" ago</td>"+
         "<td>"+a.active_sessions+"</td></tr>";
     }).join(""); }
+
+    var cn = document.getElementById("connect");
+    if(!d.agents.length){ cn.innerHTML='<div class="empty">No agents — start an agent first.</div>'; }
+    else { cn.innerHTML = d.agents.map(function(a){ return connectBlock(a.id); }).join(""); }
 
     var sb = document.getElementById("sessions");
     if(!d.sessions.length){ sb.innerHTML='<tr><td colspan="5" class="empty">No active sessions.</td></tr>'; }
