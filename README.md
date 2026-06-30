@@ -140,22 +140,36 @@ Linux relay binary with `GOOS=linux GOARCH=amd64 go build -o relay-linux-amd64 .
 
 On a PaaS that only exposes a **domain** (the IP changes on restart), point the
 agent/client at the domain — trust is pinned to the SAN `minitunnel-relay`, not
-the address, so a moving IP is a non-issue. The one requirement is that the
-gateway reaches the relay as a **raw TCP stream (L4)**, because the wire protocol
-is not HTTP:
+the address, so a moving IP is a non-issue. Pick the option that matches what the
+gateway can do.
 
-- **Plain TCP route / port mapping** — ask the platform for an L4 TCP route to
-  the relay's listen port. Set `MINITUNNEL_RELAY=your.domain:<port>`; nothing
-  else changes.
+**A. Raw TCP stream (L4) — preferred, zero code on the wire path.** If the
+platform can route a raw TCP stream to the relay, the protocol flows unchanged:
+
+- **Plain TCP route / port mapping** — ask for an L4 TCP route to the relay's
+  listen port. Set `MINITUNNEL_RELAY=your.domain:<port>`; nothing else changes.
 - **SNI-based stream route sharing :443** — when the L4 route selects the
   upstream by TLS SNI (e.g. an APISIX `stream route`), set
-  `MINITUNNEL_SNI=your.domain` on the agent and client. That SNI is sent for
-  routing while the certificate is still pinned to `minitunnel-relay`, so trust
-  is unchanged.
+  `MINITUNNEL_SNI=your.domain` on the agent and client. The SNI is sent for
+  routing while the cert stays pinned to `minitunnel-relay`.
 
-Do **not** route MiniTunnel through the platform's L7 **HTTP(S) gateway**: it
-terminates TLS with the platform's own certificate (breaking the pin) and speaks
-HTTP, which the raw protocol is not.
+**B. Only an L7 HTTP(S) gateway — tunnel over WebSocket.** Many PaaS gateways
+(e.g. APISIX) terminate TLS with their own certificate and only speak HTTP, so a
+raw TLS stream cannot pass. Run the relay's HTTP listener and connect over a
+WebSocket instead:
+
+1. On the relay set `MINITUNNEL_HTTP_ADDR=:8080` and point the gateway's HTTP
+   route at it (the same route that serves `/healthz` and the dashboard). Enable
+   WebSocket on that route (on APISIX, `enable_websocket: true`).
+2. On the agent and client set the relay to the WebSocket URL:
+   `MINITUNNEL_RELAY=wss://your.domain<prefix>/tunnel` (e.g.
+   `wss://tunnel.example.com/api/tunnel` when `MINITUNNEL_HTTP_PREFIX=/api`). Use
+   `ws://` only for a plain-HTTP gateway.
+
+The pinned relay TLS runs **inside** the WebSocket, so the certificate is still
+pinned end to end and the gateway sees only ciphertext — it never learns the PSK
+or the traffic. This is the only mode that adds a dependency
+(`github.com/coder/websocket`); the L4 options above use stdlib alone.
 
 ### 2. Agent (office Mac mini)
 

@@ -2,7 +2,8 @@
 // JSON snapshot of connected agents and live sessions, a self-contained HTML
 // page that renders it, and an unauthenticated /healthz for load-balancer /
 // container TCP-or-HTTP probes. Everything except /healthz is gated by
-// MINITUNNEL_ADMIN_TOKEN. Pure stdlib, no third-party deps.
+// MINITUNNEL_ADMIN_TOKEN. The same listener also hosts the WebSocket tunnel
+// entry (<prefix>/tunnel) for relays reached only through an L7 HTTP gateway.
 package main
 
 import (
@@ -99,6 +100,18 @@ func (r *relay) snapshot() statusResp {
 	}
 }
 
+// handleWS upgrades a WebSocket tunnel request, wraps it in the relay's server
+// TLS, and feeds it to the normal connection handler — identical from there on
+// to a connection accepted on the raw TLS port.
+func (r *relay) handleWS(w http.ResponseWriter, req *http.Request) {
+	conn, err := proto.AcceptWS(w, req, r.tlsConf)
+	if err != nil {
+		log.Printf("ws upgrade from %s failed: %v", req.RemoteAddr, err)
+		return
+	}
+	r.handle(conn)
+}
+
 // serveHTTP runs the dashboard listener. Blocks; run in its own goroutine. All
 // routes are mounted under r.httpPrefix so the service can sit behind a gateway
 // that routes by URL path (e.g. https://host/minitunnel/...).
@@ -116,6 +129,13 @@ func (r *relay) serveHTTP(addr string) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(r.snapshot())
 	}))
+
+	// Tunnel entry for peers stuck behind an L7 HTTP gateway: a WebSocket that
+	// carries the same protocol as the raw TLS port. Deliberately NOT behind
+	// authed — it carries its own PSK + pinned TLS, and a client has no admin
+	// token. The endpoint matters only when the relay sits behind a gateway, so
+	// it shares the gateway-routed HTTP listener rather than the raw TLS port.
+	mux.HandleFunc(prefix+"/tunnel", r.handleWS)
 
 	// The page knows its own prefix so its fetches and links resolve correctly.
 	page := strings.ReplaceAll(dashboardHTML, "__PREFIX__", prefix)

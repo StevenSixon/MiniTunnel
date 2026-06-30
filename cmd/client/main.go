@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -72,12 +73,14 @@ func main() {
 	// One-time startup probe so an unreachable relay or bad cert/PSK is obvious
 	// immediately, rather than only when you try to connect. Non-fatal: the
 	// listeners still come up, so it recovers once the relay is back.
-	if c, err := tls.Dial("tcp", *relayAddr, tlsConf); err != nil {
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 10*time.Second)
+	if c, err := proto.DialRelay(probeCtx, *relayAddr, tlsConf); err != nil {
 		log.Printf("warning: relay %s not reachable yet: %v (listeners will start anyway)", *relayAddr, err)
 	} else {
 		c.Close()
 		log.Printf("relay %s reachable", *relayAddr)
 	}
+	cancelProbe()
 
 	var wg sync.WaitGroup
 	for _, f := range parsed {
@@ -162,8 +165,10 @@ func handleConn(local net.Conn, f forward, relayAddr string, tlsConf *tls.Config
 func dialRelay(relayAddr string, tlsConf *tls.Config, attempts int) (net.Conn, error) {
 	var err error
 	for i := 0; i < attempts; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		var conn net.Conn
-		conn, err = tls.Dial("tcp", relayAddr, tlsConf)
+		conn, err = proto.DialRelay(ctx, relayAddr, tlsConf)
+		cancel()
 		if err == nil {
 			return conn, nil
 		}

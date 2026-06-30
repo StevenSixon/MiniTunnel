@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -58,7 +59,9 @@ func main() {
 
 func run(addr string, tlsConf *tls.Config, id, psk string, allowed map[int]bool) error {
 	log.Printf("dialing relay %s ...", addr)
-	conn, err := tls.Dial("tcp", addr, tlsConf)
+	dialCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	conn, err := proto.DialRelay(dialCtx, addr, tlsConf)
+	cancel()
 	if err != nil {
 		return err
 	}
@@ -113,7 +116,9 @@ func handleSession(addr string, tlsConf *tls.Config, psk string, n proto.Control
 		log.Printf("refusing session to disallowed port %d", n.TargetPort)
 		return
 	}
-	relayConn, err := tls.Dial("tcp", addr, tlsConf)
+	dialCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	relayConn, err := proto.DialRelay(dialCtx, addr, tlsConf)
+	cancel()
 	if err != nil {
 		log.Printf("session %s: dial relay: %v", n.SessionID, err)
 		return

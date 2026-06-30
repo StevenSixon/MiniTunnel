@@ -4,9 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-MiniTunnel is a self-hosted reverse tunnel (pure Go, stdlib only) for reaching a
-machine behind NAT with a changing IP — its origin use case is remoting into an
-office Mac mini from home. It deliberately does **not** implement screen capture
+MiniTunnel is a self-hosted reverse tunnel (pure Go, stdlib only with a single
+exception — see below) for reaching a machine behind NAT with a changing IP —
+its origin use case is remoting into an office Mac mini from home.
+
+> **stdlib-only exception:** `github.com/coder/websocket` is the sole third-party
+> dependency. It backs the optional WebSocket transport (`internal/proto/ws.go`),
+> used only when the relay is reachable solely through an L7 HTTP gateway that
+> terminates TLS and speaks HTTP, not raw TLS. A correct WebSocket framing
+> implementation that survives an uncontrolled intermediary is not worth
+> hand-rolling. Do not add further dependencies without the same bar. It deliberately does **not** implement screen capture
 or a terminal protocol: it builds only the encrypted transport and forwards to
 the target's existing `sshd` (:22) and macOS Screen Sharing (`screensharingd`,
 :5900). New transport features belong here; anything resembling a VNC/SSH
@@ -79,6 +86,16 @@ dial-back cannot miss the session.
 - Every connection is **TLS**. The client/agent pin the relay's self-signed cert
   via `RootCAs` and verify against the fixed SAN `ServerName` ("minitunnel-relay"),
   so the relay's IP/hostname can change freely — never tie trust to the address.
+- **Transport (`DialRelay` / `AcceptWS` in `internal/proto/ws.go`).**
+  `MINITUNNEL_RELAY` is either a `host:port` (direct TLS dial, optionally through
+  an L4 gateway; `MINITUNNEL_SNI` sets the routing SNI while the cert stays
+  pinned) **or** a `ws://` / `wss://` URL. The URL form tunnels through an L7 HTTP
+  gateway as a WebSocket and runs the pinned TLS as an **inner** layer inside it,
+  so trust is unchanged and the gateway sees only ciphertext. The relay serves
+  the WebSocket at `<MINITUNNEL_HTTP_PREFIX>/tunnel` on its HTTP listener
+  (`MINITUNNEL_HTTP_ADDR`) — the same listener as the dashboard, so it rides a
+  gateway route that already reaches the relay. The raw TLS listener
+  (`MINITUNNEL_ADDR`) stays up regardless; both entry points feed `relay.handle`.
 - Every connection opens with one length-prefixed JSON `Hello` (`WriteMsg`/
   `ReadMsg` use a 4-byte length prefix specifically so a data connection can
   switch to raw byte piping afterward without over-reading). A **`SessionAck`**

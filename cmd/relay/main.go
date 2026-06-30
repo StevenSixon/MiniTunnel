@@ -50,7 +50,8 @@ type relay struct {
 	psk        string
 	adminToken string
 	listenAddr string
-	httpPrefix string // URL path prefix for the dashboard, e.g. "/minitunnel" ("" = root)
+	httpPrefix string      // URL path prefix for the dashboard, e.g. "/minitunnel" ("" = root)
+	tlsConf    *tls.Config // relay server cert, also presented inside WebSocket tunnels
 	startedAt  time.Time
 
 	mu       sync.Mutex
@@ -86,6 +87,7 @@ func main() {
 		adminToken: proto.EnvOr("MINITUNNEL_ADMIN_TOKEN", ""),
 		listenAddr: *addr,
 		httpPrefix: normalizePrefix(proto.EnvOr("MINITUNNEL_HTTP_PREFIX", "")),
+		tlsConf:    tlsConf,
 		startedAt:  time.Now(),
 		agents:     map[string]*agentConn{},
 		waiting:    map[string]*pending{},
