@@ -42,6 +42,9 @@ echo ">> building agent binary"
 ( cd "$REPO_ROOT" && go build -o "$SCRIPT_DIR/.minitunnel-agent.build" ./cmd/agent )
 
 echo ">> installing binary -> $BIN_DST"
+# /usr/local/bin doesn't exist by default on Apple Silicon (Homebrew lives in
+# /opt/homebrew), and install(1) won't create the destination dir — make it.
+sudo mkdir -p "$(dirname "$BIN_DST")"
 sudo install -m 0755 "$SCRIPT_DIR/.minitunnel-agent.build" "$BIN_DST"
 rm -f "$SCRIPT_DIR/.minitunnel-agent.build"
 
