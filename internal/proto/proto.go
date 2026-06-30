@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -129,16 +130,36 @@ func ResolvePSK(flagVal string) string {
 	return os.Getenv("MINITUNNEL_PSK")
 }
 
+// EnvOr returns the value of environment variable key, or def if it is unset or
+// empty. Used as a flag's default so precedence is: explicit flag > env > def.
+func EnvOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// loadPEM returns PEM bytes from src, which may be either inline PEM (the value
+// itself, recognised by the "-----BEGIN" marker) or a path to a file holding it.
+// This lets the certificate and key live directly in MINITUNNEL_CERT/MINITUNNEL_KEY
+// (e.g. in a .env) with no .pem files on disk, while still accepting a path.
+func loadPEM(src string) ([]byte, error) {
+	if strings.Contains(src, "-----BEGIN") {
+		return []byte(src), nil
+	}
+	return os.ReadFile(src)
+}
+
 // ClientTLS builds a TLS config that trusts only the pinned relay certificate
-// and verifies it against the fixed ServerName.
-func ClientTLS(certFile string) (*tls.Config, error) {
-	pemBytes, err := os.ReadFile(certFile)
+// and verifies it against the fixed ServerName. cert is a path or inline PEM.
+func ClientTLS(cert string) (*tls.Config, error) {
+	pemBytes, err := loadPEM(cert)
 	if err != nil {
 		return nil, err
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pemBytes) {
-		return nil, fmt.Errorf("no certificate found in %s", certFile)
+		return nil, fmt.Errorf("no certificate found (check -cert / MINITUNNEL_CERT)")
 	}
 	return &tls.Config{
 		RootCAs:    pool,
@@ -147,9 +168,18 @@ func ClientTLS(certFile string) (*tls.Config, error) {
 	}, nil
 }
 
-// ServerTLS loads the relay's certificate and key.
-func ServerTLS(certFile, keyFile string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+// ServerTLS loads the relay's certificate and key. Each argument is a path or
+// inline PEM.
+func ServerTLS(certSrc, keySrc string) (*tls.Config, error) {
+	certPEM, err := loadPEM(certSrc)
+	if err != nil {
+		return nil, fmt.Errorf("certificate: %w", err)
+	}
+	keyPEM, err := loadPEM(keySrc)
+	if err != nil {
+		return nil, fmt.Errorf("key: %w", err)
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, err
 	}

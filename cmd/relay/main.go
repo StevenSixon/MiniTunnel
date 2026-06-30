@@ -32,9 +32,9 @@ type relay struct {
 }
 
 func main() {
-	addr := flag.String("addr", ":7000", "TLS listen address")
-	certFile := flag.String("cert", "cert.pem", "relay certificate")
-	keyFile := flag.String("key", "key.pem", "relay private key")
+	addr := flag.String("addr", proto.EnvOr("MINITUNNEL_ADDR", ":7000"), "TLS listen address (or MINITUNNEL_ADDR)")
+	certFile := flag.String("cert", proto.EnvOr("MINITUNNEL_CERT", "cert.pem"), "relay certificate (or MINITUNNEL_CERT)")
+	keyFile := flag.String("key", proto.EnvOr("MINITUNNEL_KEY", "key.pem"), "relay private key (or MINITUNNEL_KEY)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
 	flag.Parse()
 

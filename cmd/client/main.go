@@ -34,12 +34,12 @@ type forward struct {
 }
 
 func main() {
-	relayAddr := flag.String("relay", "", "relay address host:port")
-	certFile := flag.String("cert", "cert.pem", "pinned relay certificate")
+	relayAddr := flag.String("relay", proto.EnvOr("MINITUNNEL_RELAY", ""), "relay address host:port (or MINITUNNEL_RELAY)")
+	certFile := flag.String("cert", proto.EnvOr("MINITUNNEL_CERT", "cert.pem"), "pinned relay certificate (or MINITUNNEL_CERT)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
-	agentID := flag.String("agent", "", "target agent id")
+	agentID := flag.String("agent", proto.EnvOr("MINITUNNEL_AGENT", ""), "target agent id (or MINITUNNEL_AGENT)")
 	var forwards multiFlag
-	flag.Var(&forwards, "L", "forward localPort:remotePort (repeatable); default 2222:22 and 5901:5900")
+	flag.Var(&forwards, "L", "forward localPort:remotePort (repeatable); default 2222:22 and 5901:5900 (or MINITUNNEL_FORWARD, comma-separated)")
 	flag.Parse()
 
 	if *relayAddr == "" || *agentID == "" {
@@ -55,7 +55,11 @@ func main() {
 	}
 
 	if len(forwards) == 0 {
-		forwards = multiFlag{"2222:22", "5901:5900"}
+		if env := proto.EnvOr("MINITUNNEL_FORWARD", ""); env != "" {
+			forwards = multiFlag(strings.Split(env, ","))
+		} else {
+			forwards = multiFlag{"2222:22", "5901:5900"}
+		}
 	}
 	parsed, err := parseForwards(forwards)
 	if err != nil {

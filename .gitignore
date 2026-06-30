@@ -2,6 +2,7 @@
 cert.pem
 key.pem
 *.psk
+.env
 
 # Build artifacts. Anchored with a leading slash so they only match binaries
 # at the repo root and do NOT match the cmd/relay, cmd/agent, ... SOURCE dirs.

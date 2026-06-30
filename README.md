@@ -77,6 +77,21 @@ GOOS=linux GOARCH=amd64 go build -o bin/relay-linux ./cmd/relay
 
 ## Setup
 
+> **Configuration.** Every flag below also reads from a `MINITUNNEL_*`
+> environment variable, so you can drive all three programs entirely from the
+> environment (handy for systemd `EnvironmentFile=`, the macOS LaunchDaemon, or a
+> local `.env`). Precedence is **flag > env var > default**. See
+> [`.env.example`](.env.example) for the full list: `MINITUNNEL_PSK`,
+> `MINITUNNEL_CERT`, `MINITUNNEL_KEY`, `MINITUNNEL_ADDR`, `MINITUNNEL_RELAY`,
+> `MINITUNNEL_ID`, `MINITUNNEL_ALLOW`, `MINITUNNEL_AGENT`, `MINITUNNEL_FORWARD`.
+> A quick local run: `cp .env.example .env`, edit it, then
+> `set -a; source .env; set +a` and start each binary with no flags.
+>
+> **No `.pem` files needed.** `MINITUNNEL_CERT`/`MINITUNNEL_KEY` (and `-cert`/
+> `-key`) accept either a file path *or* inline PEM — paste the certificate/key
+> straight into `.env` (multi-line, double-quoted) and there is nothing on disk
+> to manage or copy around.
+
 ### 0. Generate the certificate and a key (once)
 
 ```sh

@@ -20,11 +20,11 @@ import (
 )
 
 func main() {
-	relayAddr := flag.String("relay", "", "relay address host:port")
-	certFile := flag.String("cert", "cert.pem", "pinned relay certificate")
-	id := flag.String("id", "", "this agent's id (chosen by you)")
+	relayAddr := flag.String("relay", proto.EnvOr("MINITUNNEL_RELAY", ""), "relay address host:port (or MINITUNNEL_RELAY)")
+	certFile := flag.String("cert", proto.EnvOr("MINITUNNEL_CERT", "cert.pem"), "pinned relay certificate (or MINITUNNEL_CERT)")
+	id := flag.String("id", proto.EnvOr("MINITUNNEL_ID", ""), "this agent's id, chosen by you (or MINITUNNEL_ID)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
-	allow := flag.String("allow", "22,5900", "comma-separated local ports clients may reach")
+	allow := flag.String("allow", proto.EnvOr("MINITUNNEL_ALLOW", "22,5900"), "comma-separated local ports clients may reach (or MINITUNNEL_ALLOW)")
 	flag.Parse()
 
 	if *relayAddr == "" || *id == "" {

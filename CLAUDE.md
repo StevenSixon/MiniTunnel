@@ -28,6 +28,15 @@ binaries end to end: start `relay`, point an `agent` at it with a local echo/SSH
 service, start a `client` with `-L`, and send bytes through the forwarded local
 port. The PSK is shared via the `MINITUNNEL_PSK` env var across all three.
 
+Every flag has a `MINITUNNEL_*` env-var fallback via `proto.EnvOr(key, default)`,
+which is used as the flag's default so precedence stays **flag > env > default**.
+When adding a new flag, give it the same treatment and list it in `.env.example`.
+PSK keeps its own `proto.ResolvePSK` (identical fallback, kept for the clearer
+call site). Vars: `MINITUNNEL_PSK/CERT/KEY/ADDR/RELAY/ID/ALLOW/AGENT/FORWARD`.
+`cert`/`key` accept a path **or** inline PEM — `proto.loadPEM` treats a value
+containing `-----BEGIN` as literal PEM, else a file path — so the cert and key
+can live entirely in env/`.env` with no `.pem` files on disk.
+
 ## Architecture
 
 Four programs share one wire protocol in `internal/proto`. They version
