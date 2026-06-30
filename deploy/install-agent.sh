@@ -8,6 +8,11 @@
 #   RELAY=your.vps.ip:7000 AGENT_ID=office-mini MINITUNNEL_PSK=... \
 #     ./deploy/install-agent.sh
 #
+# RELAY may be a host:port (direct/L4) OR a ws://|wss:// URL when the relay is
+# reached through an L7 HTTP gateway, e.g.
+#   RELAY='wss://tunnel.example.com/api/tunnel' AGENT_ID=office-mini \
+#     MINITUNNEL_PSK=... ./deploy/install-agent.sh
+#
 # Optional env:
 #   CERT=path/to/cert.pem   (default: ./cert.pem)
 #   ALLOW=22,5900           (default: 22,5900 — local ports clients may reach)

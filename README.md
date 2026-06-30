@@ -138,6 +138,9 @@ Linux relay binary with `GOOS=linux GOARCH=amd64 go build -o relay-linux-amd64 .
 
 #### Behind a cloud domain gateway (changing IP)
 
+> Full walkthrough (rationale, container deploy, env reference, troubleshooting):
+> [`docs/cloud-gateway-wss.md`](docs/cloud-gateway-wss.md).
+
 On a PaaS that only exposes a **domain** (the IP changes on restart), point the
 agent/client at the domain — trust is pinned to the SAN `minitunnel-relay`, not
 the address, so a moving IP is a non-issue. Pick the option that matches what the
@@ -207,6 +210,12 @@ out or the screen is locked (the script also applies the `pmset` settings above)
 ```sh
 RELAY=relay.host:7000 AGENT_ID=office-mini MINITUNNEL_PSK=... ./deploy/install-agent.sh
 ```
+
+`RELAY` may also be a `ws://` / `wss://` URL when the relay sits behind an L7
+gateway, e.g. `RELAY='wss://tunnel.example.com/api/tunnel'`. To run the agent
+itself in a Linux container, see `deploy/Dockerfile.agent` (note the localhost
+caveat — the agent reaches `127.0.0.1` in its own namespace, so use
+`--network host`). The Mac mini should use the LaunchDaemon above, not a container.
 
 Or run it in the foreground for a quick test (it reconnects forever on its own):
 
