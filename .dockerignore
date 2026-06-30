@@ -1,0 +1,21 @@
+# Keep the build context small and keep secrets OUT of the image. The relay's
+# cert/key/PSK are supplied at runtime via MINITUNNEL_* env vars, never baked in.
+.git
+.gitignore
+bin/
+/relay
+/agent
+/client
+/gencert
+/relay-linux-*
+
+# secrets — must never enter the image
+cert.pem
+key.pem
+*.psk
+.env
+
+# docs / deploy scripts not needed to build the binary
+README.md
+CLAUDE.md
+deploy/

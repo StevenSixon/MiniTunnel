@@ -171,6 +171,26 @@ pinned end to end and the gateway sees only ciphertext — it never learns the P
 or the traffic. This is the only mode that adds a dependency
 (`github.com/coder/websocket`); the L4 options above use stdlib alone.
 
+##### Running the relay as a container
+
+For a container PaaS, `deploy/Dockerfile` builds a tiny static image and
+`deploy/relay.env.example` is the ready-to-fill environment for the WebSocket
+deployment above. Build from the repo **root**:
+
+```sh
+docker build -f deploy/Dockerfile -t minitunnel-relay:latest .
+```
+
+All config is via `MINITUNNEL_*` env vars (no args). Map the platform's HTTP
+route and container port to **8080**, enable WebSocket on that route, and set a
+liveness probe to `<prefix>/healthz` (e.g. `/api/healthz`). Cert and key go in
+as single-line base64 PEM so no files live in the image — see the comments in
+`deploy/relay.env.example`. To run it locally against that env file:
+
+```sh
+docker run --rm --env-file relay.env -p 8080:8080 minitunnel-relay:latest
+```
+
 ### 2. Agent (office Mac mini)
 
 First enable the macOS services it will bridge to (System Settings → General →
