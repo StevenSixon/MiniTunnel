@@ -5,10 +5,12 @@
 package proto
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -139,13 +141,19 @@ func EnvOr(key, def string) string {
 	return def
 }
 
-// loadPEM returns PEM bytes from src, which may be either inline PEM (the value
-// itself, recognised by the "-----BEGIN" marker) or a path to a file holding it.
-// This lets the certificate and key live directly in MINITUNNEL_CERT/MINITUNNEL_KEY
-// (e.g. in a .env) with no .pem files on disk, while still accepting a path.
+// loadPEM returns PEM bytes from src, accepting three forms so the certificate
+// and key can live in MINITUNNEL_CERT/MINITUNNEL_KEY with no .pem files on disk:
+//  1. inline PEM — the value itself (recognised by the "-----BEGIN" marker);
+//  2. base64-encoded PEM — a single line, for cloud env-var UIs that mangle
+//     multi-line values (recognised only if it decodes to PEM);
+//  3. otherwise, a path to a file containing the PEM.
 func loadPEM(src string) ([]byte, error) {
 	if strings.Contains(src, "-----BEGIN") {
 		return []byte(src), nil
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(src)); err == nil &&
+		bytes.Contains(decoded, []byte("-----BEGIN")) {
+		return decoded, nil
 	}
 	return os.ReadFile(src)
 }
