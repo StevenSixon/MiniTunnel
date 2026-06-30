@@ -22,6 +22,7 @@ import (
 func main() {
 	relayAddr := flag.String("relay", proto.EnvOr("MINITUNNEL_RELAY", ""), "relay address host:port (or MINITUNNEL_RELAY)")
 	certFile := flag.String("cert", proto.EnvOr("MINITUNNEL_CERT", "cert.pem"), "pinned relay certificate (or MINITUNNEL_CERT)")
+	sni := flag.String("sni", proto.EnvOr("MINITUNNEL_SNI", ""), "SNI to send for an L4 gateway that routes by it, e.g. tunnel.example.com; cert is still pinned (or MINITUNNEL_SNI)")
 	id := flag.String("id", proto.EnvOr("MINITUNNEL_ID", ""), "this agent's id, chosen by you (or MINITUNNEL_ID)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
 	allow := flag.String("allow", proto.EnvOr("MINITUNNEL_ALLOW", "22,5900"), "comma-separated local ports clients may reach (or MINITUNNEL_ALLOW)")
@@ -38,7 +39,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("invalid -allow: %v", err)
 	}
-	tlsConf, err := proto.ClientTLS(*certFile)
+	tlsConf, err := proto.ClientTLS(*certFile, *sni)
 	if err != nil {
 		log.Fatalf("loading certificate: %v", err)
 	}

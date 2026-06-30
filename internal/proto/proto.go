@@ -158,9 +158,20 @@ func loadPEM(src string) ([]byte, error) {
 	return os.ReadFile(src)
 }
 
-// ClientTLS builds a TLS config that trusts only the pinned relay certificate
-// and verifies it against the fixed ServerName. cert is a path or inline PEM.
-func ClientTLS(cert string) (*tls.Config, error) {
+// ClientTLS builds a TLS config that trusts only the pinned relay certificate.
+// The relay's cert always carries the fixed SAN ServerName, so trust never
+// depends on the relay's (possibly changing) address. cert is a path or inline
+// PEM.
+//
+// sni selects the SNI sent in the handshake, which matters only behind an L4
+// gateway that routes by it:
+//   - empty: send ServerName and let stdlib verify the cert against it — the
+//     direct-dial and plain TCP-passthrough case (unchanged default).
+//   - non-empty: send sni instead, so an SNI-based gateway stream route (e.g.
+//     an APISIX stream route sharing :443) can route to the relay. The cert is
+//     still pinned to ServerName via VerifyPeerCertificate, so sending a
+//     different SNI does not weaken trust.
+func ClientTLS(cert, sni string) (*tls.Config, error) {
 	pemBytes, err := loadPEM(cert)
 	if err != nil {
 		return nil, err
@@ -169,11 +180,50 @@ func ClientTLS(cert string) (*tls.Config, error) {
 	if !pool.AppendCertsFromPEM(pemBytes) {
 		return nil, fmt.Errorf("no certificate found (check -cert / MINITUNNEL_CERT)")
 	}
-	return &tls.Config{
+	cfg := &tls.Config{
 		RootCAs:    pool,
 		ServerName: ServerName,
 		MinVersion: tls.VersionTLS12,
-	}, nil
+	}
+	if sni != "" && sni != ServerName {
+		// Route by sni at the gateway, but keep pinning the relay cert to
+		// ServerName. Disable stdlib's built-in hostname check (it would match
+		// the cert against sni and fail) and verify manually against the pool.
+		cfg.ServerName = sni
+		cfg.InsecureSkipVerify = true
+		cfg.VerifyPeerCertificate = pinToServerName(pool)
+	}
+	return cfg, nil
+}
+
+// pinToServerName verifies the presented chain against pool and requires the
+// leaf to carry the fixed ServerName SAN — the same guarantee stdlib gives when
+// ServerName drives verification, but independent of the SNI sent for gateway
+// routing.
+func pinToServerName(pool *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return fmt.Errorf("relay presented no certificate")
+		}
+		certs := make([]*x509.Certificate, 0, len(rawCerts))
+		for _, raw := range rawCerts {
+			c, err := x509.ParseCertificate(raw)
+			if err != nil {
+				return err
+			}
+			certs = append(certs, c)
+		}
+		opts := x509.VerifyOptions{
+			Roots:         pool,
+			DNSName:       ServerName,
+			Intermediates: x509.NewCertPool(),
+		}
+		for _, c := range certs[1:] {
+			opts.Intermediates.AddCert(c)
+		}
+		_, err := certs[0].Verify(opts)
+		return err
+	}
 }
 
 // ServerTLS loads the relay's certificate and key. Each argument is a path or

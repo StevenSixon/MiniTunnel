@@ -36,6 +36,7 @@ type forward struct {
 func main() {
 	relayAddr := flag.String("relay", proto.EnvOr("MINITUNNEL_RELAY", ""), "relay address host:port (or MINITUNNEL_RELAY)")
 	certFile := flag.String("cert", proto.EnvOr("MINITUNNEL_CERT", "cert.pem"), "pinned relay certificate (or MINITUNNEL_CERT)")
+	sni := flag.String("sni", proto.EnvOr("MINITUNNEL_SNI", ""), "SNI to send for an L4 gateway that routes by it, e.g. tunnel.example.com; cert is still pinned (or MINITUNNEL_SNI)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
 	agentID := flag.String("agent", proto.EnvOr("MINITUNNEL_AGENT", ""), "target agent id (or MINITUNNEL_AGENT)")
 	var forwards multiFlag
@@ -49,7 +50,7 @@ func main() {
 	if psk == "" {
 		log.Fatal("a pre-shared key is required (-psk or MINITUNNEL_PSK)")
 	}
-	tlsConf, err := proto.ClientTLS(*certFile)
+	tlsConf, err := proto.ClientTLS(*certFile, *sni)
 	if err != nil {
 		log.Fatalf("loading certificate: %v", err)
 	}

@@ -32,7 +32,7 @@ Every flag has a `MINITUNNEL_*` env-var fallback via `proto.EnvOr(key, default)`
 which is used as the flag's default so precedence stays **flag > env > default**.
 When adding a new flag, give it the same treatment and list it in `.env.example`.
 PSK keeps its own `proto.ResolvePSK` (identical fallback, kept for the clearer
-call site). Vars: `MINITUNNEL_PSK/CERT/KEY/ADDR/RELAY/ID/ALLOW/AGENT/FORWARD`.
+call site). Vars: `MINITUNNEL_PSK/CERT/KEY/ADDR/RELAY/ID/ALLOW/AGENT/FORWARD/SNI`.
 `cert`/`key` accept three forms via `proto.loadPEM`: a value containing
 `-----BEGIN` is literal PEM; an otherwise-valid base64 string that decodes to PEM
 is single-line base64 (for cloud env-var UIs that mangle newlines); else a file

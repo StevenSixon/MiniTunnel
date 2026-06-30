@@ -136,6 +136,27 @@ Open the port to the agent (office mini) and to your VPN client range. Build the
 Linux relay binary with `GOOS=linux GOARCH=amd64 go build -o relay-linux-amd64 ./cmd/relay`
 (use `arm64` for ARM servers).
 
+#### Behind a cloud domain gateway (changing IP)
+
+On a PaaS that only exposes a **domain** (the IP changes on restart), point the
+agent/client at the domain — trust is pinned to the SAN `minitunnel-relay`, not
+the address, so a moving IP is a non-issue. The one requirement is that the
+gateway reaches the relay as a **raw TCP stream (L4)**, because the wire protocol
+is not HTTP:
+
+- **Plain TCP route / port mapping** — ask the platform for an L4 TCP route to
+  the relay's listen port. Set `MINITUNNEL_RELAY=your.domain:<port>`; nothing
+  else changes.
+- **SNI-based stream route sharing :443** — when the L4 route selects the
+  upstream by TLS SNI (e.g. an APISIX `stream route`), set
+  `MINITUNNEL_SNI=your.domain` on the agent and client. That SNI is sent for
+  routing while the certificate is still pinned to `minitunnel-relay`, so trust
+  is unchanged.
+
+Do **not** route MiniTunnel through the platform's L7 **HTTP(S) gateway**: it
+terminates TLS with the platform's own certificate (breaking the pin) and speaks
+HTTP, which the raw protocol is not.
+
 ### 2. Agent (office Mac mini)
 
 First enable the macOS services it will bridge to (System Settings → General →
