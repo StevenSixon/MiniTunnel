@@ -21,14 +21,41 @@ type agentConn struct {
 	id   string
 	conn net.Conn
 	mu   sync.Mutex
+
+	remoteAddr  string
+	connectedAt time.Time
+	lastSeen    time.Time // last inbound message; guarded by relay.mu
+}
+
+// pending is a parked client request awaiting the agent's data dial-back. It
+// carries enough context to describe the resulting session on the dashboard.
+type pending struct {
+	conn       net.Conn
+	agentID    string
+	targetPort int
+	clientAddr string
+	createdAt  time.Time
+}
+
+// session is a live, piped client<->agent tunnel, tracked for the dashboard.
+type session struct {
+	id         string
+	agentID    string
+	targetPort int
+	clientAddr string
+	startedAt  time.Time
 }
 
 type relay struct {
-	psk string
+	psk        string
+	adminToken string
+	listenAddr string
+	startedAt  time.Time
 
-	mu      sync.Mutex
-	agents  map[string]*agentConn // agentID -> control link
-	waiting map[string]net.Conn   // sessionID -> parked client connection
+	mu       sync.Mutex
+	agents   map[string]*agentConn // agentID -> control link
+	waiting  map[string]*pending   // sessionID -> parked client request
+	sessions map[string]*session   // sessionID -> live tunnel
 }
 
 func main() {
@@ -36,6 +63,7 @@ func main() {
 	certFile := flag.String("cert", proto.EnvOr("MINITUNNEL_CERT", "cert.pem"), "relay certificate (or MINITUNNEL_CERT)")
 	keyFile := flag.String("key", proto.EnvOr("MINITUNNEL_KEY", "key.pem"), "relay private key (or MINITUNNEL_KEY)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
+	httpAddr := flag.String("http", proto.EnvOr("MINITUNNEL_HTTP_ADDR", ""), "status dashboard + /healthz listen address, e.g. :8080 (or MINITUNNEL_HTTP_ADDR); empty disables")
 	flag.Parse()
 
 	psk := proto.ResolvePSK(*pskFlag)
@@ -53,10 +81,19 @@ func main() {
 	log.Printf("relay listening on %s", *addr)
 
 	r := &relay{
-		psk:     psk,
-		agents:  map[string]*agentConn{},
-		waiting: map[string]net.Conn{},
+		psk:        psk,
+		adminToken: proto.EnvOr("MINITUNNEL_ADMIN_TOKEN", ""),
+		listenAddr: *addr,
+		startedAt:  time.Now(),
+		agents:     map[string]*agentConn{},
+		waiting:    map[string]*pending{},
+		sessions:   map[string]*session{},
 	}
+
+	if *httpAddr != "" {
+		go r.serveHTTP(*httpAddr)
+	}
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -105,7 +142,14 @@ func (r *relay) handleAgent(conn net.Conn, h proto.Hello) {
 		return
 	}
 	proto.SetKeepAlive(conn)
-	ac := &agentConn{id: h.AgentID, conn: conn}
+	now := time.Now()
+	ac := &agentConn{
+		id:          h.AgentID,
+		conn:        conn,
+		remoteAddr:  conn.RemoteAddr().String(),
+		connectedAt: now,
+		lastSeen:    now,
+	}
 
 	r.mu.Lock()
 	if old := r.agents[h.AgentID]; old != nil {
@@ -148,13 +192,17 @@ func (r *relay) handleAgent(conn net.Conn, h proto.Hello) {
 		}
 	}()
 
-	// Read loop: any inbound message (the agent's own Ping) resets the deadline.
+	// Read loop: any inbound message (the agent's own Ping) resets the deadline
+	// and refreshes lastSeen for the dashboard.
 	for {
 		conn.SetReadDeadline(time.Now().Add(proto.ControlReadTimeout))
 		var m proto.ControlMsg
 		if err := proto.ReadMsg(conn, &m); err != nil {
 			return
 		}
+		r.mu.Lock()
+		ac.lastSeen = time.Now()
+		r.mu.Unlock()
 	}
 }
 
@@ -181,7 +229,13 @@ func (r *relay) handleClient(conn net.Conn, h proto.Hello) {
 
 	// Park before notifying so a fast agent dial-back can't miss the session.
 	r.mu.Lock()
-	r.waiting[sid] = conn
+	r.waiting[sid] = &pending{
+		conn:       conn,
+		agentID:    h.AgentID,
+		targetPort: h.TargetPort,
+		clientAddr: conn.RemoteAddr().String(),
+		createdAt:  time.Now(),
+	}
 	r.mu.Unlock()
 
 	ac.mu.Lock()
@@ -208,9 +262,9 @@ func (r *relay) handleClient(conn net.Conn, h proto.Hello) {
 	go func() {
 		time.Sleep(15 * time.Second)
 		r.mu.Lock()
-		if c := r.waiting[sid]; c == conn {
+		if p := r.waiting[sid]; p != nil && p.conn == conn {
 			delete(r.waiting, sid)
-			c.Close()
+			p.conn.Close()
 			log.Printf("session %s timed out waiting for agent", sid)
 		}
 		r.mu.Unlock()
@@ -221,14 +275,28 @@ func (r *relay) handleClient(conn net.Conn, h proto.Hello) {
 // and pipes them together.
 func (r *relay) handleAgentSession(conn net.Conn, h proto.Hello) {
 	r.mu.Lock()
-	client := r.waiting[h.SessionID]
+	p := r.waiting[h.SessionID]
 	delete(r.waiting, h.SessionID)
+	if p != nil {
+		r.sessions[h.SessionID] = &session{
+			id:         h.SessionID,
+			agentID:    p.agentID,
+			targetPort: p.targetPort,
+			clientAddr: p.clientAddr,
+			startedAt:  time.Now(),
+		}
+	}
 	r.mu.Unlock()
-	if client == nil {
+	if p == nil {
 		log.Printf("agent_session for unknown/expired session %s", h.SessionID)
 		conn.Close()
 		return
 	}
-	log.Printf("pairing session %s", h.SessionID)
-	proto.Pipe(client, conn)
+	log.Printf("pairing session %s (agent %q :%d <-> client %s)", h.SessionID, p.agentID, p.targetPort, p.clientAddr)
+	proto.Pipe(p.conn, conn)
+
+	r.mu.Lock()
+	delete(r.sessions, h.SessionID)
+	r.mu.Unlock()
+	log.Printf("session %s ended", h.SessionID)
 }
