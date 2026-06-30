@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template installed by deploy/install-client.sh. The __PLACEHOLDERS__ are
+  substituted at install time. Runs as a LaunchAgent (per-user GUI context) so
+  the client comes up at login and is restarted if it ever exits. It only opens
+  local 127.0.0.1 forwards, so it needs no root. Config is read from the repo's
+  .env at launch (single source of truth), so updating config is just editing
+  .env and reloading this agent.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.minitunnel.client</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>cd '__REPO__' &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; exec ./bin/client</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__LOG__</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG__</string>
+</dict>
+</plist>
