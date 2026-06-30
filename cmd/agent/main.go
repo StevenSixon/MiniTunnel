@@ -43,6 +43,8 @@ func main() {
 		log.Fatalf("loading certificate: %v", err)
 	}
 
+	log.Printf("agent starting: id=%q relay=%s allow=%s", *id, *relayAddr, *allow)
+
 	// Reconnect forever: dropped Wi-Fi, relay restart or office IP change all
 	// just trigger a re-dial.
 	for {
@@ -54,6 +56,7 @@ func main() {
 }
 
 func run(addr string, tlsConf *tls.Config, id, psk string, allowed map[int]bool) error {
+	log.Printf("dialing relay %s ...", addr)
 	conn, err := tls.Dial("tcp", addr, tlsConf)
 	if err != nil {
 		return err
@@ -68,7 +71,7 @@ func run(addr string, tlsConf *tls.Config, id, psk string, allowed map[int]bool)
 	}); err != nil {
 		return err
 	}
-	log.Printf("registered with relay as %q", id)
+	log.Printf("registered with relay as %q (control link %s -> %s)", id, conn.LocalAddr(), conn.RemoteAddr())
 
 	// Heartbeat sender. On write failure, close the conn so the read loop below
 	// returns and run() reconnects.
@@ -128,8 +131,9 @@ func handleSession(addr string, tlsConf *tls.Config, psk string, n proto.Control
 		relayConn.Close()
 		return
 	}
-	log.Printf("session %s -> 127.0.0.1:%d", n.SessionID, n.TargetPort)
+	log.Printf("session %s: bridging client <-> 127.0.0.1:%d", n.SessionID, n.TargetPort)
 	proto.Pipe(relayConn, local)
+	log.Printf("session %s: closed (127.0.0.1:%d)", n.SessionID, n.TargetPort)
 }
 
 func parsePorts(s string) (map[int]bool, error) {

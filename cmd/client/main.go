@@ -66,6 +66,8 @@ func main() {
 		log.Fatalf("invalid -L: %v", err)
 	}
 
+	log.Printf("client starting: relay=%s agent=%q forwards=%s", *relayAddr, *agentID, forwards.String())
+
 	// One-time startup probe so an unreachable relay or bad cert/PSK is obvious
 	// immediately, rather than only when you try to connect. Non-fatal: the
 	// listeners still come up, so it recovers once the relay is back.
@@ -111,6 +113,8 @@ func serve(f forward, relayAddr string, tlsConf *tls.Config, agentID, psk string
 func handleConn(local net.Conn, f forward, relayAddr string, tlsConf *tls.Config, agentID, psk string) {
 	defer local.Close()
 
+	log.Printf(":%d: new connection from %s (-> agent %q :%d)", f.localPort, local.RemoteAddr(), agentID, f.remotePort)
+
 	relayConn, err := dialRelay(relayAddr, tlsConf, 3)
 	if err != nil {
 		log.Printf(":%d: relay unreachable at %s: %v", f.localPort, relayAddr, err)
@@ -145,9 +149,11 @@ func handleConn(local net.Conn, f forward, relayAddr string, tlsConf *tls.Config
 		return
 	}
 
+	log.Printf(":%d: tunnel up -> agent %q :%d", f.localPort, agentID, f.remotePort)
 	piped := relayConn
 	relayConn = nil // ownership passes to Pipe; suppress the deferred close
 	proto.Pipe(local, piped)
+	log.Printf(":%d: connection closed (agent %q :%d)", f.localPort, agentID, f.remotePort)
 }
 
 // dialRelay tries to connect to the relay up to attempts times with a short,
