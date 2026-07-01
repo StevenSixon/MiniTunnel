@@ -258,16 +258,16 @@ Host mini
     LocalCommand printf '\n🚀 MiniTunnel · connected to office-mini (SSH)\n\n'
 ```
 
-`~/.zshrc` — a `mini-vnc` function that opens Screen Sharing through the forward:
+`~/.zshrc` — a `vnc-mini` function that opens Screen Sharing through the forward:
 
 ```sh
-mini-vnc() {
+vnc-mini() {
   printf '\n🖥️  MiniTunnel · opening office-mini Screen Sharing (127.0.0.1:5901)\n\n'
   open vnc://127.0.0.1:5901
 }
 ```
 
-Then just `ssh mini` (terminal) or `mini-vnc` (screen). The client must be
+Then just `ssh mini` (terminal) or `vnc-mini` (screen). The client must be
 running for either to work.
 
 ## Managing the Mac mini agent
