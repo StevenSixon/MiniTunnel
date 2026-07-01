@@ -153,7 +153,7 @@ func handleConn(local net.Conn, f forward, relayAddr string, tlsConf *tls.Config
 		return
 	}
 
-	log.Printf("✓ CONNECTED  127.0.0.1:%d → %s  — tunnel is up, go ahead", f.localPort, target(agentID, f.remotePort))
+	log.Printf("✓ CONNECTED  127.0.0.1:%d → %s  — tunnel is up, go ahead 🚀", f.localPort, target(agentID, f.remotePort))
 	piped := relayConn
 	relayConn = nil // ownership passes to Pipe; suppress the deferred close
 	start := time.Now()
