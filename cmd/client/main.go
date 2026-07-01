@@ -98,7 +98,7 @@ func serve(f forward, relayAddr string, tlsConf *tls.Config, agentID, psk string
 	if err != nil {
 		log.Fatalf("listen :%d: %v", f.localPort, err)
 	}
-	log.Printf("forwarding 127.0.0.1:%d -> agent %q :%d", f.localPort, agentID, f.remotePort)
+	log.Printf("forwarding 127.0.0.1:%d → %s", f.localPort, target(agentID, f.remotePort))
 
 	for {
 		local, err := ln.Accept()
@@ -117,7 +117,7 @@ func serve(f forward, relayAddr string, tlsConf *tls.Config, agentID, psk string
 func handleConn(local net.Conn, f forward, relayAddr string, tlsConf *tls.Config, agentID, psk string) {
 	defer local.Close()
 
-	log.Printf(":%d: new connection from %s (-> agent %q :%d)", f.localPort, local.RemoteAddr(), agentID, f.remotePort)
+	log.Printf("· incoming on 127.0.0.1:%d → %s, opening tunnel …", f.localPort, target(agentID, f.remotePort))
 
 	relayConn, err := dialRelay(relayAddr, tlsConf, 3)
 	if err != nil {
@@ -153,11 +153,24 @@ func handleConn(local net.Conn, f forward, relayAddr string, tlsConf *tls.Config
 		return
 	}
 
-	log.Printf(":%d: tunnel up -> agent %q :%d", f.localPort, agentID, f.remotePort)
+	log.Printf("✓ CONNECTED  127.0.0.1:%d → %s  — tunnel is up, go ahead", f.localPort, target(agentID, f.remotePort))
 	piped := relayConn
 	relayConn = nil // ownership passes to Pipe; suppress the deferred close
+	start := time.Now()
 	proto.Pipe(local, piped)
-	log.Printf(":%d: connection closed (agent %q :%d)", f.localPort, agentID, f.remotePort)
+	log.Printf("✗ closed     127.0.0.1:%d → %s  after %s", f.localPort, target(agentID, f.remotePort), time.Since(start).Round(time.Second))
+}
+
+// target renders the tunnel's far end for logs, naming well-known ports so a
+// human reading the client output can tell SSH from Screen Sharing at a glance.
+func target(agentID string, remotePort int) string {
+	switch remotePort {
+	case 22:
+		return fmt.Sprintf("%s:%d (SSH)", agentID, remotePort)
+	case 5900:
+		return fmt.Sprintf("%s:%d (Screen Sharing)", agentID, remotePort)
+	}
+	return fmt.Sprintf("%s:%d", agentID, remotePort)
 }
 
 // dialRelay tries to connect to the relay up to attempts times with a short,
