@@ -239,6 +239,37 @@ open vnc://127.0.0.1:5901          # Screen Sharing (works at the lock screen)
 Add more forwards with repeated `-L localPort:remotePort` (each remote port must
 be in the agent's `-allow` list).
 
+#### Convenience shortcuts (optional, on the client machine)
+
+These are personal shell/SSH config on your machine — not part of the tunnel —
+so you connect with a short command and get a visible "connected" line in your
+own terminal. (MiniTunnel forwards the raw stream and can't print into the SSH
+session itself, so the confirmation is printed locally.)
+
+`~/.ssh/config` — turns `ssh -p 2222 <user>@127.0.0.1` into `ssh mini`, and
+prints a banner locally on connect via `LocalCommand`:
+
+```
+Host mini
+    HostName 127.0.0.1
+    Port 2222
+    User <user>
+    PermitLocalCommand yes
+    LocalCommand printf '\n🚀 MiniTunnel · connected to office-mini (SSH)\n\n'
+```
+
+`~/.zshrc` — a `mini-vnc` function that opens Screen Sharing through the forward:
+
+```sh
+mini-vnc() {
+  printf '\n🖥️  MiniTunnel · opening office-mini Screen Sharing (127.0.0.1:5901)\n\n'
+  open vnc://127.0.0.1:5901
+}
+```
+
+Then just `ssh mini` (terminal) or `mini-vnc` (screen). The client must be
+running for either to work.
+
 ## Managing the Mac mini agent
 
 `deploy/install-agent.sh` (used above) installs the agent as a LaunchDaemon, so
