@@ -83,10 +83,6 @@ const dashboardHTML = `<!doctype html>
 
 <script>
 var BASE = "__PREFIX__";  // URL path prefix injected by the relay ("" or "/foo")
-// Relay endpoint as seen from this browser. If the page is reached through an L7
-// gateway (https), clients must tunnel over wss to <prefix>/tunnel; the commands
-// below are derived from the current address so they always point at the right host.
-var WSS = (location.protocol==="https:"?"wss://":"ws://")+location.host+BASE+"/tunnel";
 function dur(s){ s=Math.max(0,s|0);
   var d=Math.floor(s/86400); s%=86400;
   var h=Math.floor(s/3600); s%=3600;
@@ -102,12 +98,9 @@ function cmdRow(label,text){
     '<button onclick="copyCmd(this)">Copy</button></div>';
 }
 function connectBlock(id){
-  var c1='MINITUNNEL_PSK=<your-psk> ./client -relay '+WSS+' -agent '+id+
-         ' -cert cert.pem -L 2222:22 -L 5901:5900';
   return '<div class="connect-agent"><h3 class="mono">'+esc(id)+'</h3>'+
-    cmdRow('1) Start client on your machine (keep it running; run from the MiniTunnel dir)', c1)+
-    cmdRow('2) SSH in (another terminal)', 'ssh -p 2222 <user>@127.0.0.1')+
-    cmdRow('3) Screen sharing', 'open vnc://127.0.0.1:5901')+
+    cmdRow('1) SSH in', 'ssh -p 2222 <user>@127.0.0.1')+
+    cmdRow('2) Screen sharing', 'open vnc://127.0.0.1:5901')+
     '</div>';
 }
 function copyCmd(b){
