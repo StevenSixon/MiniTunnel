@@ -1,4 +1,4 @@
-module minitunnel
+module github.com/StevenSixon/MiniTunnel
 
 go 1.23
 

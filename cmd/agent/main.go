@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"minitunnel/internal/proto"
+	"github.com/StevenSixon/MiniTunnel/internal/proto"
 )
 
 func main() {

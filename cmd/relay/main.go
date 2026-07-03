@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"minitunnel/internal/proto"
+	"github.com/StevenSixon/MiniTunnel/internal/proto"
 )
 
 // agentConn is a registered agent's long-lived control link. The mutex

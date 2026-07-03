@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"minitunnel/internal/proto"
+	"github.com/StevenSixon/MiniTunnel/internal/proto"
 )
 
 // multiFlag collects repeated -L flags.

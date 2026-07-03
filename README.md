@@ -1,15 +1,27 @@
 # MiniTunnel
 
-A tiny, self-hosted reverse tunnel for reaching a machine behind NAT with a
-changing IP — built to remote into an office Mac mini from home without paying
-for, or trusting, third-party remote-desktop services.
+**A tiny, self-hosted reverse tunnel to reach a machine behind NAT with a
+changing IP — SSH and remote-desktop into your office Mac from home, over
+infrastructure you own.**
 
-It does **not** reinvent SSH or VNC. It builds the *transport*: a TLS tunnel
-through a relay you control, then forwards your terminal (SSH) and remote
-desktop (macOS Screen Sharing) over it. Because the office machine only ever
-dials **out** to the relay, NAT and a rotating office IP are non-issues, and you
-get locked-screen login + adaptive image quality for free from macOS's own
-`sshd` and `screensharingd`.
+[![CI](https://github.com/StevenSixon/MiniTunnel/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenSixon/MiniTunnel/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/StevenSixon/MiniTunnel)](https://goreportcard.com/report/github.com/StevenSixon/MiniTunnel)
+[![Go Reference](https://pkg.go.dev/badge/github.com/StevenSixon/MiniTunnel.svg)](https://pkg.go.dev/github.com/StevenSixon/MiniTunnel)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/go-1.23%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Dependencies: stdlib + 1](https://img.shields.io/badge/deps-stdlib%20%2B%201-brightgreen.svg)](#why-minitunnel)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+MiniTunnel does **not** reinvent SSH or VNC. It builds the one thing you're
+missing — the *transport*: a pinned-TLS tunnel through a relay you control, then
+forwards your terminal (SSH) and remote desktop (macOS Screen Sharing) over it.
+Because the office machine only ever dials **out** to the relay, NAT and a
+rotating office IP are non-issues, and you get locked-screen login + adaptive
+image quality for free from macOS's own `sshd` and `screensharingd`.
+
+No account. No SaaS. No agent phoning home to a vendor. Four small Go binaries
+and a certificate you generate yourself — about 1,500 lines you can read in an
+afternoon.
 
 ```
         relay host — VPS or internal server (you run it)
@@ -25,6 +37,88 @@ get locked-screen login + adaptive image quality for free from macOS's own
    127.0.0.1:22  (sshd)            ssh -p 2222 you@127.0.0.1
    127.0.0.1:5900 (Screen Sharing) open vnc://127.0.0.1:5901
 ```
+
+## See it in action
+
+From home, `ssh mini` drops you into a shell on the office machine, and
+`vnc-mini` opens its screen through the same tunnel — the native macOS Screen
+Sharing login, working even at the lock screen:
+
+![SSH into the office mini and open Screen Sharing through the tunnel](docs/images/ssh-and-screen-sharing-login.png)
+
+Once authenticated, it's the real desktop — full resolution, adaptive quality,
+all from macOS's own `screensharingd` over the encrypted tunnel:
+
+![The office Mac mini's full remote desktop, forwarded over MiniTunnel](docs/images/remote-desktop.png)
+
+## Why MiniTunnel
+
+Remote-access tools ask you to route your keystrokes and screen through
+*their* servers, or to trust a mesh VPN's coordination plane. MiniTunnel is for
+people who would rather own the whole path.
+
+| | MiniTunnel | ngrok / Cloudflare Tunnel | Tailscale / ZeroTier | TeamViewer / AnyDesk |
+|---|---|---|---|---|
+| Traffic path | **A relay you run** | Vendor edge | Vendor coordination + P2P | Vendor cloud |
+| Account / sign-up | **None** | Required | Required | Required |
+| Trust anchor | **A cert you generate** | Vendor TLS | Vendor identity | Vendor |
+| Data leaves your control | **No** | Yes | Metadata / relays | Yes |
+| Locked-screen desktop login | **Yes** (native Screen Sharing) | n/a | via native VNC | Yes |
+| Cost | **Free** (a small VPS or an internal box) | Freemium | Freemium | Paid for commercial |
+| Footprint | **~1,500 LoC, stdlib + 1 dep** | Closed source | Closed core | Closed source |
+
+It's not trying to beat those on features — it's the answer when the requirement
+is *"nothing I don't run myself touches this traffic."*
+
+## Features
+
+- 🔒 **Pinned-TLS end to end.** Every link is TLS; the agent and client pin the
+  relay's self-signed cert to a fixed SAN, so the relay's IP/hostname can change
+  freely and there's no CA to manage.
+- 🔑 **PSK-authenticated.** A pre-shared key (constant-time compared) gates every
+  connection, on top of TLS.
+- 🚪 **Dials out only.** The target machine never accepts inbound connections —
+  NAT, firewalls, and a rotating office IP are all non-issues.
+- 🛡️ **Port allowlist.** The agent will only reach ports you list (default
+  `22,5900`); a client can't pivot it onto arbitrary hosts/ports.
+- ♻️ **Self-healing.** Heartbeats detect dead links; the agent auto-reconnects
+  every 3s, so relay restarts, Wi-Fi blips, and IP changes recover on their own.
+- 🌐 **Runs behind any gateway.** Direct TLS, SNI-routed L4, or tunneled inside a
+  WebSocket for L7-only PaaS gateways — the pinned TLS stays end to end in all
+  three.
+- 📊 **Built-in dashboard + healthcheck.** A read-only status page and `/healthz`
+  for load balancers and container probes.
+- 🪶 **Tiny and auditable.** Pure Go, stdlib-only save for one deliberate
+  dependency. No telemetry, no phone-home.
+
+## Quick start
+
+With Go 1.23+ installed you can grab the binaries directly:
+
+```sh
+go install github.com/StevenSixon/MiniTunnel/cmd/relay@latest
+go install github.com/StevenSixon/MiniTunnel/cmd/agent@latest
+go install github.com/StevenSixon/MiniTunnel/cmd/client@latest
+go install github.com/StevenSixon/MiniTunnel/cmd/gencert@latest
+```
+
+Then, in three terminals sharing one PSK:
+
+```sh
+export MINITUNNEL_PSK="$(openssl rand -hex 24)"   # share this across all three
+
+gencert                                            # writes cert.pem + key.pem
+relay  -addr :7000 -cert cert.pem -key key.pem     # on the relay host
+agent  -relay RELAY_HOST:7000 -cert cert.pem -id office-mini   # on the target
+client -relay RELAY_HOST:7000 -cert cert.pem -agent office-mini # where you are
+
+ssh -p 2222 you@127.0.0.1                          # terminal, through the tunnel
+open vnc://127.0.0.1:5901                           # screen, works at the lock screen
+```
+
+That's the whole thing. The rest of this README is the production deployment
+(systemd/LaunchDaemon, cloud gateways, containers) and the details behind each
+step.
 
 ## Components
 
@@ -294,3 +388,35 @@ sudo launchctl bootout system/com.minitunnel.agent         # stop / uninstall
   punching is a planned optimization.
 - If FileVault is on and the mini reboots, it stops at the pre-boot unlock
   screen, which is below this tunnel — someone must unlock it physically.
+
+## Roadmap
+
+- [ ] Direct P2P data path via UDP hole punching (relay stays the rendezvous,
+  bytes go peer-to-peer where the network allows).
+- [ ] First-class Linux/Windows target support beyond the macOS-focused
+  deployment scripts.
+- [ ] Optional per-session audit logging on the relay.
+
+Ideas and PRs welcome — see below.
+
+## Contributing
+
+Contributions are welcome! Bug reports, docs fixes, and features all help. Start
+with [CONTRIBUTING.md](CONTRIBUTING.md) for the scope, the stdlib-only
+dependency policy, and how to test end to end.
+
+```sh
+git clone https://github.com/StevenSixon/MiniTunnel.git
+cd MiniTunnel
+go build ./... && go vet ./...
+```
+
+Security issues: please report them privately — see [SECURITY.md](SECURITY.md).
+
+## License
+
+MiniTunnel is released under the [MIT License](LICENSE).
+
+---
+
+<sub>If MiniTunnel is useful to you, a ⭐ helps others find it.</sub>
