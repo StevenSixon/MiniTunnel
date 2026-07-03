@@ -16,10 +16,10 @@ MiniTunnel 的信任模型是**客户端 pin 固定证书**：client/agent 用 `
 relay 的自签证书，并校验固定 SAN `minitunnel-relay`，**与域名/IP 无关**。所以 IP
 变化本身不是问题。
 
-真正的问题在网关层。线上 `tunnel.example.com` 是平台的 **L7 HTTP 网关**
-（APISIX，响应头 `server: gateway` / `x-apisix-upstream-status`）：
+真正的问题在网关层。线上 `tunnel.example.com` 走的是平台的 **L7 HTTP 网关**
+（如 APISIX 一类的 L7 反向代理）：
 
-- 它用平台自己的证书（`*.example.com` DigiCert）**终结 TLS**，client 钉的是
+- 它用平台自己的证书（`*.example.com`，由公共 CA 签发）**终结 TLS**，client 钉的是
   `minitunnel-relay` → pin 校验失败：
   `x509: certificate is valid for *.example.com, not minitunnel-relay`。
 - 它按 **HTTP** 语义路由，而 MiniTunnel 是裸 TLS 字节流，不是 HTTP。
@@ -46,7 +46,7 @@ WebSocket 端点 `<前缀>/tunnel`。client/agent 连 `wss://域名/前缀/tunne
 **原有的 pinned TLS 跑在 WebSocket 内层**：
 
 ```
-client ─ wss://(网关 DigiCert，系统根 CA 验证) ─▶ 云上 DevOps 平台 L7 网关 ─ /api/tunnel ─▶ relay:8080
+client ─ wss://(网关证书，系统根 CA 验证) ─▶ 云上 DevOps 平台 L7 网关 ─ /api/tunnel ─▶ relay:8080
    └──────────── 你的 minitunnel-relay pinned TLS，端到端 ────────────┘
                  网关只看到不透明的加密帧，看不到 PSK 和明文流量
 ```
@@ -92,7 +92,7 @@ MINITUNNEL_CERT=<cert 的 base64>
 MINITUNNEL_KEY=<key 的 base64>
 ```
 
-云上 DevOps 平台平台侧：
+云上 DevOps 平台侧：
 
 1. 服务/路由指向**容器端口 8080**（即现在 `/api/*` 那条 HTTP 路由）。
 2. **该路由开启 WebSocket upgrade**（APISIX：`enable_websocket: true`）——本方案唯一前提。
