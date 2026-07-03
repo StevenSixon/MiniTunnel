@@ -16,6 +16,7 @@
 # Optional env:
 #   CERT=path/to/cert.pem   (default: ./cert.pem)
 #   ALLOW=22,5900           (default: 22,5900 — local ports clients may reach)
+#   MINITUNNEL_CLIP=7801    (default: empty/off — serve clipboard sync on this port)
 #
 set -euo pipefail
 
@@ -23,6 +24,7 @@ RELAY="${RELAY:-}"
 AGENT_ID="${AGENT_ID:-}"
 PSK="${MINITUNNEL_PSK:-}"
 ALLOW="${ALLOW:-22,5900}"
+CLIP="${MINITUNNEL_CLIP:-}"
 SRC_CERT="${CERT:-cert.pem}"
 
 fail() { echo "error: $*" >&2; exit 1; }
@@ -65,6 +67,7 @@ sed -e "s|__BIN__|$BIN_DST|g" \
     -e "s|__CERT__|$CERT_DST|g" \
     -e "s|__ALLOW__|$ALLOW|g" \
     -e "s|__PSK__|$PSK|g" \
+    -e "s|__CLIP__|$CLIP|g" \
     "$TEMPLATE" > "$TMP_PLIST"
 # 0600 root:wheel keeps the embedded pre-shared key out of other users' reach.
 sudo install -m 0600 -o root -g wheel "$TMP_PLIST" "$PLIST_DST"

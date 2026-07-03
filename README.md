@@ -364,6 +364,44 @@ vnc-mini() {
 Then just `ssh mini` (terminal) or `vnc-mini` (screen). The client must be
 running for either to work.
 
+## File transfer & clipboard sync
+
+**File transfer needs no extra tooling** — SSH is already forwarded, so
+anything that speaks SSH works through the tunnel. With the `Host mini` alias
+above:
+
+```sh
+scp big.zip mini:~/Downloads/          # copy a file to the mini
+scp mini:~/report.pdf .                # copy one back
+sftp mini                              # interactive browsing
+rsync -avz --progress ./project mini:~/work/   # sync a whole directory
+```
+
+**Clipboard sync** makes ⌘C on one machine paste on the other (both
+directions). It follows the same architecture as everything else: the agent
+serves a tiny clipboard service on a local port — just another allowlisted
+service like sshd — and the client keeps one tunnel session to it. The relay is
+untouched. Enable it by setting the same port on both sides:
+
+```sh
+# agent side (add MINITUNNEL_CLIP=7801 to its .env / install env)
+./agent  -relay ... -id office-mini -clip 7801
+
+# client side
+./client -relay ... -agent office-mini -clip 7801
+```
+
+Copy text anywhere on either machine; within about a second it is available to
+paste on the other — in an SSH session (`pbpaste`), in any app, or inside the
+Screen Sharing window. Notes:
+
+- Text only, up to 48 KiB per copy (larger copies are skipped with a log line).
+- Sync starts with the first copy *after* connecting; neither side's existing
+  clipboard is overwritten on startup.
+- macOS clipboard tools operate per login session. The agent LaunchDaemon runs
+  as root, so it re-targets `pbcopy`/`pbpaste` into the console user's session
+  automatically; a user must be logged in at the mini (locked screen is fine).
+
 ## Managing the Mac mini agent
 
 `deploy/install-agent.sh` (used above) installs the agent as a LaunchDaemon, so

@@ -1,0 +1,128 @@
+package clip
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"log"
+	"net"
+	"sync"
+	"time"
+
+	"github.com/StevenSixon/MiniTunnel/internal/proto"
+)
+
+// Msg is one framed message on a clipboard-sync connection. It reuses the
+// proto.WriteMsg/ReadMsg framing so both ends share the wire helpers.
+type Msg struct {
+	Type string `json:"type"`           // "clip" or "ping"
+	Text string `json:"text,omitempty"` // clipboard contents for "clip"
+}
+
+const (
+	pollInterval = time.Second // how often each side samples its clipboard
+	// maxText caps the synced payload. WriteMsg frames top out at 64 KiB of
+	// JSON; 48 KiB of text leaves headroom for JSON escaping. Bigger copies are
+	// skipped with a log line rather than killing the link.
+	maxText = 48 << 10
+)
+
+// Sync runs the bidirectional clipboard loop on conn until the link fails.
+// Both the agent (per accepted connection) and the client (per tunnel session)
+// call this same function — the protocol is symmetric.
+//
+// Loop prevention: lastSeen holds the hash of the most recent content this end
+// either sent or applied. The poller skips content matching lastSeen (so an
+// applied remote clipboard isn't echoed straight back), and the reader skips
+// incoming content matching lastSeen (so simultaneous copies can't ping-pong).
+// Nothing is sent on connect; sync starts with the first *change*, so a stale
+// clipboard never stomps the other side.
+func Sync(conn net.Conn, tag string) error {
+	// Fail fast (and reject the session) if this host can't access a clipboard
+	// at all, instead of silently polling errors forever.
+	initial, err := Read()
+	if err != nil {
+		return fmt.Errorf("clipboard unavailable: %w", err)
+	}
+
+	var mu sync.Mutex
+	lastSeen := hashText(initial)
+
+	var once sync.Once
+	stop := func() { once.Do(func() { conn.Close() }) }
+	defer stop()
+	done := make(chan struct{})
+	defer close(done)
+
+	// Writer side: poll the local clipboard and push changes; ping on the same
+	// cadence as the control link so L7 gateways don't idle-close the stream.
+	go func() {
+		poll := time.NewTicker(pollInterval)
+		defer poll.Stop()
+		ping := time.NewTicker(proto.PingInterval)
+		defer ping.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ping.C:
+				if err := proto.WriteMsg(conn, Msg{Type: "ping"}); err != nil {
+					stop()
+					return
+				}
+			case <-poll.C:
+				text, err := Read()
+				if err != nil {
+					continue // transient (e.g. no GUI session yet); keep polling
+				}
+				h := hashText(text)
+				mu.Lock()
+				changed := h != lastSeen
+				if changed {
+					lastSeen = h
+				}
+				mu.Unlock()
+				if !changed {
+					continue
+				}
+				if len(text) > maxText {
+					log.Printf("%s: clipboard is %d bytes (> %d), not synced", tag, len(text), maxText)
+					continue
+				}
+				if err := proto.WriteMsg(conn, Msg{Type: "clip", Text: text}); err != nil {
+					stop()
+					return
+				}
+			}
+		}
+	}()
+
+	// Reader side: apply incoming clipboard, treating prolonged silence (no
+	// clip and no ping) as a dead link, same policy as the control link.
+	for {
+		conn.SetReadDeadline(time.Now().Add(proto.ControlReadTimeout))
+		var m Msg
+		if err := proto.ReadMsg(conn, &m); err != nil {
+			return err
+		}
+		if m.Type != "clip" {
+			continue
+		}
+		h := hashText(m.Text)
+		mu.Lock()
+		if h == lastSeen {
+			mu.Unlock()
+			continue
+		}
+		lastSeen = h
+		mu.Unlock()
+		if err := Write(m.Text); err != nil {
+			log.Printf("%s: applying clipboard: %v", tag, err)
+		}
+	}
+}
+
+func hashText(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}

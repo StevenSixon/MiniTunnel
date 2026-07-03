@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/StevenSixon/MiniTunnel/internal/clip"
 	"github.com/StevenSixon/MiniTunnel/internal/proto"
 )
 
@@ -40,6 +41,7 @@ func main() {
 	sni := flag.String("sni", proto.EnvOr("MINITUNNEL_SNI", ""), "SNI to send for an L4 gateway that routes by it, e.g. tunnel.example.com; cert is still pinned (or MINITUNNEL_SNI)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
 	agentID := flag.String("agent", proto.EnvOr("MINITUNNEL_AGENT", ""), "target agent id (or MINITUNNEL_AGENT)")
+	clipPort := flag.String("clip", proto.EnvOr("MINITUNNEL_CLIP", ""), "sync clipboards with the agent via its clipboard port, e.g. 7801; empty disables (or MINITUNNEL_CLIP)")
 	var forwards multiFlag
 	flag.Var(&forwards, "L", "forward localPort:remotePort (repeatable); default 2222:22 and 5901:5900 (or MINITUNNEL_FORWARD, comma-separated)")
 	flag.Parse()
@@ -90,7 +92,58 @@ func main() {
 			serve(f, *relayAddr, tlsConf, *agentID, psk)
 		}(f)
 	}
+	if *clipPort != "" {
+		p, err := strconv.Atoi(*clipPort)
+		if err != nil || p < 1 || p > 65535 {
+			log.Fatalf("invalid -clip port %q", *clipPort)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			clipLoop(p, *relayAddr, tlsConf, *agentID, psk)
+		}()
+	}
 	wg.Wait()
+}
+
+// clipLoop keeps one clipboard-sync session open to the agent, reconnecting
+// like the agent's control link does. The session is an ordinary tunnel
+// session to the agent's clipboard port; both ends then run clip.Sync.
+func clipLoop(port int, relayAddr string, tlsConf *tls.Config, agentID, psk string) {
+	for {
+		err := runClipSession(port, relayAddr, tlsConf, agentID, psk)
+		log.Printf("clipboard: sync down (%v); retrying in 3s", err)
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func runClipSession(port int, relayAddr string, tlsConf *tls.Config, agentID, psk string) error {
+	conn, err := dialRelay(relayAddr, tlsConf, 3)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	proto.SetKeepAlive(conn)
+
+	if err := proto.WriteMsg(conn, proto.Hello{
+		Role:       proto.RoleClientSession,
+		AgentID:    agentID,
+		PSK:        psk,
+		TargetPort: port,
+	}); err != nil {
+		return err
+	}
+	var ack proto.SessionAck
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if err := proto.ReadMsg(conn, &ack); err != nil {
+		return err
+	}
+	conn.SetReadDeadline(time.Time{})
+	if !ack.OK {
+		return fmt.Errorf("relay refused: %s", ack.Error)
+	}
+	log.Printf("✓ clipboard sync up with %s (⌘C here ↔ there)", agentID)
+	return clip.Sync(conn, "clipboard")
 }
 
 func serve(f forward, relayAddr string, tlsConf *tls.Config, agentID, psk string) {

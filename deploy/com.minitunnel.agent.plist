@@ -26,6 +26,8 @@
     <dict>
         <key>MINITUNNEL_PSK</key>
         <string>__PSK__</string>
+        <key>MINITUNNEL_CLIP</key>
+        <string>__CLIP__</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

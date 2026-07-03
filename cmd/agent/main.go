@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/StevenSixon/MiniTunnel/internal/clip"
 	"github.com/StevenSixon/MiniTunnel/internal/proto"
 )
 
@@ -27,6 +28,7 @@ func main() {
 	id := flag.String("id", proto.EnvOr("MINITUNNEL_ID", ""), "this agent's id, chosen by you (or MINITUNNEL_ID)")
 	pskFlag := flag.String("psk", "", "pre-shared key (or set MINITUNNEL_PSK)")
 	allow := flag.String("allow", proto.EnvOr("MINITUNNEL_ALLOW", "22,5900"), "comma-separated local ports clients may reach (or MINITUNNEL_ALLOW)")
+	clipPort := flag.String("clip", proto.EnvOr("MINITUNNEL_CLIP", ""), "serve clipboard sync on this local port, e.g. 7801; empty disables (or MINITUNNEL_CLIP)")
 	flag.Parse()
 
 	if *relayAddr == "" || *id == "" {
@@ -43,6 +45,17 @@ func main() {
 	tlsConf, err := proto.ClientTLS(*certFile, *sni)
 	if err != nil {
 		log.Fatalf("loading certificate: %v", err)
+	}
+
+	// Clipboard sync is served as one more local TCP service, auto-added to the
+	// allowlist, so it rides the existing session flow with zero relay changes.
+	if *clipPort != "" {
+		p, err := strconv.Atoi(*clipPort)
+		if err != nil || p < 1 || p > 65535 {
+			log.Fatalf("invalid -clip port %q", *clipPort)
+		}
+		allowed[p] = true
+		go serveClipboard(p)
 	}
 
 	log.Printf("agent starting: id=%q relay=%s allow=%s", *id, *relayAddr, *allow)
@@ -140,6 +153,32 @@ func handleSession(addr string, tlsConf *tls.Config, psk string, n proto.Control
 	log.Printf("session %s: bridging client <-> 127.0.0.1:%d", n.SessionID, n.TargetPort)
 	proto.Pipe(relayConn, local)
 	log.Printf("session %s: closed (127.0.0.1:%d)", n.SessionID, n.TargetPort)
+}
+
+// serveClipboard hosts the clipboard-sync service on 127.0.0.1:port. Sessions
+// reach it through the tunnel exactly like sshd or Screen Sharing; each
+// accepted connection runs the symmetric sync loop until the link drops.
+func serveClipboard(port int) {
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		log.Printf("clipboard: listen 127.0.0.1:%d: %v (clipboard sync disabled)", port, err)
+		return
+	}
+	log.Printf("clipboard sync service on 127.0.0.1:%d (port auto-allowed)", port)
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			log.Printf("clipboard: accept: %v", err)
+			continue
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			log.Printf("clipboard: sync session connected")
+			if err := clip.Sync(c, "clipboard"); err != nil {
+				log.Printf("clipboard: sync session ended: %v", err)
+			}
+		}(c)
+	}
 }
 
 func parsePorts(s string) (map[int]bool, error) {

@@ -39,7 +39,7 @@ Every flag has a `MINITUNNEL_*` env-var fallback via `proto.EnvOr(key, default)`
 which is used as the flag's default so precedence stays **flag > env > default**.
 When adding a new flag, give it the same treatment and list it in `.env.example`.
 PSK keeps its own `proto.ResolvePSK` (identical fallback, kept for the clearer
-call site). Vars: `MINITUNNEL_PSK/CERT/KEY/ADDR/RELAY/ID/ALLOW/AGENT/FORWARD/SNI`.
+call site). Vars: `MINITUNNEL_PSK/CERT/KEY/ADDR/RELAY/ID/ALLOW/AGENT/FORWARD/SNI/CLIP`.
 `cert`/`key` accept three forms via `proto.loadPEM`: a value containing
 `-----BEGIN` is literal PEM; an otherwise-valid base64 string that decodes to PEM
 is single-line base64 (for cloud env-var UIs that mangle newlines); else a file
@@ -111,6 +111,15 @@ dial-back cannot miss the session.
   to a both-sides close.
 - The agent enforces a **port allowlist** (`-allow`, default `22,5900`); a client
   cannot make it reach arbitrary ports.
+- **Clipboard sync** (`internal/clip`, enabled by `-clip <port>` / `MINITUNNEL_CLIP`
+  on both agent and client) is deliberately NOT a protocol extension: the agent
+  serves it as one more local TCP service (auto-added to the allowlist) and the
+  client opens a normal tunnel session to it, so the relay needs no changes. Both
+  ends run the same symmetric `clip.Sync` loop (poll → push, hash guard against
+  echo loops, ping keepalive). Clipboard access shells out to pbcopy/pbpaste
+  (wrapped in `launchctl asuser` when the agent runs as root, so the LaunchDaemon
+  reaches the console user's pasteboard, not root's). File transfer is
+  intentionally NOT a feature — scp/sftp/rsync already ride the forwarded SSH.
 
 ## Deployment
 

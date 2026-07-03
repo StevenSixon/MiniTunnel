@@ -27,6 +27,7 @@ RELAY="${MINITUNNEL_RELAY:-}"
 AGENT_ID="${MINITUNNEL_ID:-}"
 ALLOW="${MINITUNNEL_ALLOW:-22,5900}"
 PSK="${MINITUNNEL_PSK:-}"
+CLIP="${MINITUNNEL_CLIP:-}"
 
 [ -n "$RELAY" ]    || fail "MINITUNNEL_RELAY missing in .env"
 [ -n "$AGENT_ID" ] || fail "MINITUNNEL_ID missing in .env"
@@ -81,7 +82,7 @@ fi
 # --- step 5: install / re-install the LaunchDaemon ---------------------------
 echo ">> (re)installing agent daemon"
 RELAY="$RELAY" AGENT_ID="$AGENT_ID" ALLOW="$ALLOW" MINITUNNEL_PSK="$PSK" \
-  ./deploy/install-agent.sh
+  MINITUNNEL_CLIP="$CLIP" ./deploy/install-agent.sh
 
 # --- step 6: verify ----------------------------------------------------------
 echo ">> verifying"
