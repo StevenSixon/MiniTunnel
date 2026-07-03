@@ -51,6 +51,12 @@ all from macOS's own `screensharingd` over the encrypted tunnel:
 
 ![The office Mac mini's full remote desktop, forwarded over MiniTunnel](docs/images/remote-desktop.png)
 
+The relay's built-in dashboard shows connection state at a glance — which agents
+are online, their heartbeats, live sessions with target ports and durations, and
+copy-paste connect commands per agent:
+
+![The relay dashboard: agents online, heartbeats, live sessions, and per-agent connect commands](docs/images/relay-dashboard.png)
+
 ## Why MiniTunnel
 
 Remote-access tools ask you to route your keystrokes and screen through
