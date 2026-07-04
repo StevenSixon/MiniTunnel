@@ -36,9 +36,12 @@ CLIP="${MINITUNNEL_CLIP:-}"
 echo ">> config: relay=$RELAY  id=$AGENT_ID  allow=$ALLOW  psk=<set,len=${#PSK}>"
 
 # --- step 1: prerequisites ---------------------------------------------------
-echo ">> checking relay health"
-HEALTH_URL="https://tunnel.example.com/api/healthz"
+# For a ws(s):// relay, derive the healthz URL from the RELAY value itself:
+# wss://host/prefix/tunnel -> https://host/prefix/healthz (never hardcode a
+# domain here — the tunnel path always ends in /tunnel, see MINITUNNEL_RELAY).
 if [ "${RELAY#wss://}" != "$RELAY" ] || [ "${RELAY#ws://}" != "$RELAY" ]; then
+  echo ">> checking relay health"
+  HEALTH_URL="$(printf '%s' "$RELAY" | sed -e 's|^wss://|https://|' -e 's|^ws://|http://|' -e 's|/tunnel$|/healthz|')"
   curl -sS --max-time 15 "$HEALTH_URL" | grep -qx ok \
     && echo "   relay healthz: ok" \
     || echo "   warn: $HEALTH_URL did not return 'ok' (continuing; check network)"
