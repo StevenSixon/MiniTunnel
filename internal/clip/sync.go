@@ -15,9 +15,24 @@ import (
 // Msg is one framed message on a clipboard-sync connection. It reuses the
 // proto.WriteMsg/ReadMsg framing so both ends share the wire helpers.
 type Msg struct {
-	Type string `json:"type"`           // "clip" or "ping"
-	Text string `json:"text,omitempty"` // clipboard contents for "clip"
+	Type string `json:"type"`           // TypeHello, TypeClip or TypePing
+	Text string `json:"text,omitempty"` // clipboard contents for TypeClip
 }
+
+// Message types. The agent sends one TypeHello immediately after accepting a
+// sync session; the client waits for it before declaring the sync up. Without
+// the hello a client can't tell "session serving" from "parked connection that
+// will never be picked up" (old agent, clip disabled, port not allowlisted) —
+// it would sit silent until the read timeout. Sync itself ignores hellos, so
+// an old client against a new agent is unaffected.
+const (
+	TypeHello = "hello"
+	TypeClip  = "clip"
+	TypePing  = "ping"
+)
+
+// HelloTimeout bounds how long the client waits for the agent's hello.
+const HelloTimeout = 15 * time.Second
 
 const (
 	pollInterval = time.Second // how often each side samples its clipboard
@@ -66,7 +81,7 @@ func Sync(conn net.Conn, tag string) error {
 			case <-done:
 				return
 			case <-ping.C:
-				if err := proto.WriteMsg(conn, Msg{Type: "ping"}); err != nil {
+				if err := proto.WriteMsg(conn, Msg{Type: TypePing}); err != nil {
 					stop()
 					return
 				}
@@ -89,7 +104,7 @@ func Sync(conn net.Conn, tag string) error {
 					log.Printf("%s: clipboard is %d bytes (> %d), not synced", tag, len(text), maxText)
 					continue
 				}
-				if err := proto.WriteMsg(conn, Msg{Type: "clip", Text: text}); err != nil {
+				if err := proto.WriteMsg(conn, Msg{Type: TypeClip, Text: text}); err != nil {
 					stop()
 					return
 				}
@@ -105,7 +120,7 @@ func Sync(conn net.Conn, tag string) error {
 		if err := proto.ReadMsg(conn, &m); err != nil {
 			return err
 		}
-		if m.Type != "clip" {
+		if m.Type != TypeClip {
 			continue
 		}
 		h := hashText(m.Text)

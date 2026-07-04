@@ -107,13 +107,25 @@ func main() {
 }
 
 // clipLoop keeps one clipboard-sync session open to the agent, reconnecting
-// like the agent's control link does. The session is an ordinary tunnel
-// session to the agent's clipboard port; both ends then run clip.Sync.
+// with exponential backoff (3s doubling to 60s). A fixed short retry once got
+// this client's pooled connection rate-banned by a WAF in front of the relay
+// for hours — rapid-fire failures must slow down, not hammer. A session that
+// stayed up for a while means the link was genuinely healthy, so the backoff
+// resets and reconnection is quick again.
 func clipLoop(port int, relayAddr string, tlsConf *tls.Config, agentID, psk string) {
+	const minBackoff, maxBackoff = 3 * time.Second, 60 * time.Second
+	backoff := minBackoff
 	for {
+		start := time.Now()
 		err := runClipSession(port, relayAddr, tlsConf, agentID, psk)
-		log.Printf("clipboard: sync down (%v); retrying in 3s", err)
-		time.Sleep(3 * time.Second)
+		if time.Since(start) > time.Minute {
+			backoff = minBackoff
+		}
+		log.Printf("clipboard: sync down (%v); retrying in %s", err, backoff)
+		time.Sleep(backoff)
+		if backoff *= 2; backoff > maxBackoff {
+			backoff = maxBackoff
+		}
 	}
 }
 
@@ -138,9 +150,22 @@ func runClipSession(port int, relayAddr string, tlsConf *tls.Config, agentID, ps
 	if err := proto.ReadMsg(conn, &ack); err != nil {
 		return err
 	}
-	conn.SetReadDeadline(time.Time{})
 	if !ack.OK {
 		return fmt.Errorf("relay refused: %s", ack.Error)
+	}
+
+	// The relay's ack only means the agent is online — not that it accepted
+	// this session. Wait for the agent's hello before declaring the sync up;
+	// a missing hello means the agent never picked the session up (old agent
+	// binary, clip disabled, or the port isn't in its allowlist).
+	conn.SetReadDeadline(time.Now().Add(clip.HelloTimeout))
+	var m clip.Msg
+	if err := proto.ReadMsg(conn, &m); err != nil {
+		return fmt.Errorf("no clipboard handshake from agent (is it running an updated binary with -clip %d?): %w", port, err)
+	}
+	conn.SetReadDeadline(time.Time{})
+	if m.Type != clip.TypeHello {
+		return fmt.Errorf("unexpected first message %q from agent", m.Type)
 	}
 	log.Printf("✓ clipboard sync up with %s (⌘C here ↔ there)", agentID)
 	return clip.Sync(conn, "clipboard")

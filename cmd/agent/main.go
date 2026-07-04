@@ -127,6 +127,10 @@ func run(addr string, tlsConf *tls.Config, id, psk string, allowed map[int]bool)
 func handleSession(addr string, tlsConf *tls.Config, psk string, n proto.ControlMsg, allowed map[int]bool) {
 	if !allowed[n.TargetPort] {
 		log.Printf("refusing session to disallowed port %d", n.TargetPort)
+		// Still dial the session back and close it immediately: the client's
+		// parked connection then sees EOF right away instead of stalling until
+		// its read timeout, so a misconfigured port surfaces in seconds.
+		go closeSession(addr, tlsConf, psk, n.SessionID)
 		return
 	}
 	dialCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -155,6 +159,24 @@ func handleSession(addr string, tlsConf *tls.Config, psk string, n proto.Control
 	log.Printf("session %s: closed (127.0.0.1:%d)", n.SessionID, n.TargetPort)
 }
 
+// closeSession answers a refused session with an immediate close (see
+// handleSession). Errors are irrelevant — the client recovers via its timeout
+// anyway; this is purely a fast-path courtesy.
+func closeSession(addr string, tlsConf *tls.Config, psk, sessionID string) {
+	dialCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	conn, err := proto.DialRelay(dialCtx, addr, tlsConf)
+	cancel()
+	if err != nil {
+		return
+	}
+	proto.WriteMsg(conn, proto.Hello{
+		Role:      proto.RoleAgentSession,
+		SessionID: sessionID,
+		PSK:       psk,
+	})
+	conn.Close()
+}
+
 // serveClipboard hosts the clipboard-sync service on 127.0.0.1:port. Sessions
 // reach it through the tunnel exactly like sshd or Screen Sharing; each
 // accepted connection runs the symmetric sync loop until the link drops.
@@ -173,6 +195,12 @@ func serveClipboard(port int) {
 		}
 		go func(c net.Conn) {
 			defer c.Close()
+			// Announce the session so the client can tell "being served" from
+			// "parked and never picked up" — it waits for this hello before
+			// declaring the sync up.
+			if err := proto.WriteMsg(c, clip.Msg{Type: clip.TypeHello}); err != nil {
+				return
+			}
 			log.Printf("clipboard: sync session connected")
 			if err := clip.Sync(c, "clipboard"); err != nil {
 				log.Printf("clipboard: sync session ended: %v", err)

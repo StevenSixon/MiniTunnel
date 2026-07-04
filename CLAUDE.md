@@ -116,7 +116,12 @@ dial-back cannot miss the session.
   serves it as one more local TCP service (auto-added to the allowlist) and the
   client opens a normal tunnel session to it, so the relay needs no changes. Both
   ends run the same symmetric `clip.Sync` loop (poll → push, hash guard against
-  echo loops, ping keepalive). Clipboard access shells out to pbcopy/pbpaste
+  echo loops, ping keepalive). The agent sends one `hello` on accept and the
+  client requires it before declaring the sync up (a relay ack alone only proves
+  the agent is online, not that it serves the port); refused ports are answered
+  with an immediate dial-back-and-close so clients fail in seconds, not on a 90s
+  timeout. The client reconnects with 3s→60s exponential backoff — a fixed 3s
+  retry once got the pooled connection WAF-banned for hours; don't reintroduce it. Clipboard access shells out to pbcopy/pbpaste
   (wrapped in `launchctl asuser` when the agent runs as root, so the LaunchDaemon
   reaches the console user's pasteboard, not root's). File transfer is
   intentionally NOT a feature — scp/sftp/rsync already ride the forwarded SSH.
