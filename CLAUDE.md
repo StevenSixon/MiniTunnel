@@ -121,7 +121,11 @@ dial-back cannot miss the session.
   the agent is online, not that it serves the port); refused ports are answered
   with an immediate dial-back-and-close so clients fail in seconds, not on a 90s
   timeout. The client reconnects with 3s→60s exponential backoff — a fixed 3s
-  retry once got the pooled connection WAF-banned for hours; don't reintroduce it. Clipboard access shells out to pbcopy/pbpaste
+  retry once got the pooled connection WAF-banned for hours; don't reintroduce it.
+  Images sync too (macOS ends only): PNG via osascript (`clipboard info` gives a
+  cheap change signature so the multi-MB fetch only happens on change), chunked
+  into `img` frames (32 KiB raw/chunk, 8 MiB cap) since WriteMsg frames top out
+  at 64 KiB. Unknown msg types are ignored, so mixed versions fall back to text. Clipboard access shells out to pbcopy/pbpaste
   (wrapped in `launchctl asuser` when the agent runs as root, so the LaunchDaemon
   reaches the console user's pasteboard, not root's). File transfer is
   intentionally NOT a feature — scp/sftp/rsync already ride the forwarded SSH.

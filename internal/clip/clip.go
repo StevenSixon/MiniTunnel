@@ -47,25 +47,32 @@ func Write(text string) error {
 func pasteCmd() (*exec.Cmd, error) { return toolCmd(true) }
 func copyCmd() (*exec.Cmd, error)  { return toolCmd(false) }
 
-// toolCmd picks the platform clipboard tool. On macOS, when running as root
-// (the agent LaunchDaemon), pbcopy/pbpaste would operate on root's pasteboard,
-// not the logged-in user's — so the command is re-targeted into the console
-// user's session via launchctl asuser + sudo -u. Without this the sync would
-// "work" in a terminal test and silently do nothing in the real deployment.
+// userCmd builds a command that talks to the *console user's* pasteboard. On
+// macOS, when running as root (the agent LaunchDaemon), pbcopy/pbpaste/osascript
+// would operate on root's pasteboard, not the logged-in user's — so the command
+// is re-targeted into the console user's session via launchctl asuser + sudo -u.
+// Without this the sync would "work" in a terminal test and silently do nothing
+// in the real deployment. On other platforms (and as a normal user) it is a
+// plain exec.Command.
+func userCmd(name string, args ...string) *exec.Cmd {
+	if runtime.GOOS == "darwin" && os.Geteuid() == 0 {
+		if uid, ok := consoleUID(); ok && uid != 0 {
+			u := strconv.Itoa(uid)
+			full := append([]string{"asuser", u, "sudo", "-u", "#" + u, name}, args...)
+			return exec.Command("launchctl", full...)
+		}
+	}
+	return exec.Command(name, args...)
+}
+
+// toolCmd picks the platform text-clipboard tool.
 func toolCmd(paste bool) (*exec.Cmd, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		tool := "pbcopy"
 		if paste {
-			tool = "pbpaste"
+			return userCmd("pbpaste"), nil
 		}
-		if os.Geteuid() == 0 {
-			if uid, ok := consoleUID(); ok && uid != 0 {
-				u := strconv.Itoa(uid)
-				return exec.Command("launchctl", "asuser", u, "sudo", "-u", "#"+u, tool), nil
-			}
-		}
-		return exec.Command(tool), nil
+		return userCmd("pbcopy"), nil
 	case "linux":
 		// Wayland first, then X11. -n on wl-paste drops the trailing newline it
 		// would otherwise append.

@@ -397,11 +397,14 @@ untouched. Enable it by setting the same port on both sides:
 ./client -relay ... -agent office-mini -clip 7801
 ```
 
-Copy text anywhere on either machine; within about a second it is available to
-paste on the other — in an SSH session (`pbpaste`), in any app, or inside the
-Screen Sharing window. Notes:
+Copy text — or an image — anywhere on either machine; within a second or two
+it is available to paste on the other: in an SSH session (`pbpaste`), in any
+app, inside the Screen Sharing window, or as a direct image paste into a
+terminal tool that reads the clipboard (e.g. Ctrl+V into Claude Code). Notes:
 
-- Text only, up to 48 KiB per copy (larger copies are skipped with a log line).
+- Text up to 48 KiB per copy; images (PNG, converted from whatever the
+  pasteboard holds) up to 8 MiB, streamed in chunks. Larger copies are skipped
+  with a log line. Image sync is macOS-to-macOS; Linux ends sync text only.
 - Sync starts with the first copy *after* connecting; neither side's existing
   clipboard is overwritten on startup.
 - macOS clipboard tools operate per login session. The agent LaunchDaemon runs
